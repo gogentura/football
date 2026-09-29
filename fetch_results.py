@@ -9,13 +9,14 @@ import urllib.request
 TOKEN = os.environ.get("FOOTBALL_DATA_TOKEN", "")
 
 # Код лиги -> название. Лишние строки можно удалить, бесплатный тариф даёт 12 турниров.
-# Другие коды: DED (Нидерланды), PPL (Португалия), ELC (Чемпионшип), CL (Лига чемпионов).
+# Другие коды: DED (Нидерланды), PPL (Португалия), ELC (Чемпионшип).
 LEAGUES = {
     "PL": "Англия. Премьер-лига",
     "PD": "Испания. Ла Лига",
     "BL1": "Германия. Бундеслига",
     "SA": "Италия. Серия A",
     "FL1": "Франция. Лига 1",
+    "CL": "Лига чемпионов",
 }
 
 OUT = "results.json"
@@ -53,7 +54,9 @@ def main():
         seen = {(m[0], m[1], m[2]) for m in league["matches"]}
         added = 0
         for m in js.get("matches", []):
-            ft = (m.get("score") or {}).get("fullTime") or {}
+            sc = m.get("score") or {}
+            # Для матчей с дополнительным временем берём счёт основного времени (90 минут)
+            ft = sc.get("regularTime") or sc.get("fullTime") or {}
             gh, ga = ft.get("home"), ft.get("away")
             if gh is None or ga is None:
                 continue
