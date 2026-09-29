@@ -327,7 +327,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       }
     }
     if(h===undefined)return null;
-    h=h.trim();a=a.trim();
+    h=h.replace(/^[\s\-–—:,;]+|[\s\-–—:,;]+$/g,'');a=a.replace(/^[\s\-–—:,;]+|[\s\-–—:,;]+$/g,'');
     if(!h||!a||gh>30||ga>30)return null;
     return {h:h,a:a,gh:gh,ga:ga,date:date};
   }
@@ -340,12 +340,26 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       p.h=res(p.h);p.a=res(p.a);p.i=out.length;
       out.push(p);
     });
+    var dups=0;
+    if(out.length){
+      var seen={},keep=[];
+      out.forEach(function(m){
+        if(m.date){
+          var k=m.date+'|'+m.h+'|'+m.a;
+          if(seen[k]!==undefined){keep[seen[k]]=m;dups++;return}
+          seen[k]=keep.length;
+        }
+        keep.push(m);
+      });
+      out=keep;
+      out.forEach(function(m,i){m.i=i});
+    }
     if(out.length&&out.every(function(m){return m.date})){
       out.sort(function(x,y){return x.date<y.date?-1:(x.date>y.date?1:x.i-y.i)});
     }
     var counts={};
     out.forEach(function(m){counts[m.h]=(counts[m.h]||0)+1;counts[m.a]=(counts[m.a]||0)+1});
-    return {matches:out,bad:bad,teams:Object.keys(counts),counts:counts};
+    return {matches:out,bad:bad,teams:Object.keys(counts),counts:counts,dups:dups};
   }
 
   /* ----- модель ----- */
@@ -585,6 +599,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
     }
     if(skipped)info+=' Пропущено по дате: '+skipped+'.';
     if(d.auto&&autoUpdated)info+=' Набор загружается автоматически, обновлён '+autoUpdated+'. Ручные правки в нём будут перезаписаны.';
+    if(p.dups)info+=' Убрано дублей: '+p.dups+'.';
     if(p.bad.length)info+=' Не распознано строк: '+p.bad.length+'.';
     $('#fitInfo').textContent=info;
     renderBad(p.bad);
@@ -804,12 +819,14 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
         }
         bet={pick:+pick,odds:oo,stake:stake};
       }
-      var j=loadJ();
-      j.push({id:Date.now(),ts:Date.now(),h:snap.h,a:snap.a,mode:snap.mode,dsId:snap.dsId,league:snap.league,
-        lh:raw.lh,la:raw.la,p1:raw.p1,px:raw.px,p2:raw.p2,o25:raw.o25,btts:raw.btts,res:null,added:false,bet:bet});
+      var j=loadJ(),now=Date.now();
+      var old=j.filter(function(e){return !e.res&&e.h===snap.h&&e.a===snap.a&&e.dsId===snap.dsId})[0];
+      var rec={id:old?old.id:now,ts:old?old.ts:now,h:snap.h,a:snap.a,mode:snap.mode,dsId:snap.dsId,league:snap.league,
+        lh:raw.lh,la:raw.la,p1:raw.p1,px:raw.px,p2:raw.p2,o25:raw.o25,btts:raw.btts,res:null,added:false,bet:bet};
+      if(old)j[j.indexOf(old)]=rec;else j.push(rec);
       saveJ(j);
       this.disabled=true;
-      this.textContent='Сохранено в журнал';
+      this.textContent=old?'Прежняя запись обновлена':'Сохранено в журнал';
       $('#betMsg').textContent='';
     });
     $('#result').scrollIntoView({behavior:'smooth',block:'start'});
