@@ -702,7 +702,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
     var len=(d.text||'').length,c=dsCache[id];
     if(c&&c.len===len)return c.map;
     var map={};
-    parseAll(d.text||'').matches.forEach(function(m){map[m.h+'|'+m.a]=m});
+    parseAll(d.text||'').matches.forEach(function(m){var k=m.h+'|'+m.a;(map[k]=map[k]||[]).push(m)});
     dsCache[id]={len:len,map:map};
     return map;
   }
@@ -710,8 +710,14 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
     if(e.known!==undefined)return e.known?'post':'pre';
     var map=dsMatches(e.dsId);
     if(!map)return 'pre';
-    var m=map[e.h+'|'+e.a];
-    if(!m)return 'pre';
+    var arr=map[e.h+'|'+e.a];
+    if(!arr)return 'pre';
+    var m=arr[0],best=Infinity;
+    arr.forEach(function(x){
+      if(!x.date)return;
+      var dist=Math.abs(Date.parse(x.date+'T12:00:00Z')-e.ts);
+      if(dist<best){best=dist;m=x}
+    });
     if(!m.date)return 'unk';
     var t0=Date.parse(m.date+'T00:00:00Z');
     if(e.ts<t0)return 'pre';
