@@ -482,7 +482,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       list.push({s:i+':'+j,p:p});
     }
     list.sort(function(a,b){return b.p-a.p});
-    return {p1:p1,px:px,p2:p2,o25:o25,btts:btts,top:list.slice(0,5),lh:lh,la:la};
+    return {p1:p1,px:px,p2:p2,o25:o25,btts:btts,top:list.slice(0,5),all:list,lh:lh,la:la};
   }
   /*PURE-END*/
 
@@ -694,8 +694,32 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
   }
 
   /* ---------- калибровка ---------- */
+  /* ---------- честность прогнозов: был ли матч уже в данных ---------- */
+  var dsCache={};
+  function dsMatches(id){
+    var d=DS.list.filter(function(x){return x.id===id})[0];
+    if(!d)return null;
+    var len=(d.text||'').length,c=dsCache[id];
+    if(c&&c.len===len)return c.map;
+    var map={};
+    parseAll(d.text||'').matches.forEach(function(m){map[m.h+'|'+m.a]=m});
+    dsCache[id]={len:len,map:map};
+    return map;
+  }
+  function classify(e){
+    if(e.known!==undefined)return e.known?'post':'pre';
+    var map=dsMatches(e.dsId);
+    if(!map)return 'pre';
+    var m=map[e.h+'|'+e.a];
+    if(!m)return 'pre';
+    if(!m.date)return 'unk';
+    var t0=Date.parse(m.date+'T00:00:00Z');
+    if(e.ts<t0)return 'pre';
+    if(e.ts<t0+86400000)return 'day';
+    return 'post';
+  }
   function calInfo(){
-    var s=loadJ().filter(function(e){return e.res});
+    var s=loadJ().filter(function(e){return e.res&&classify(e)==='pre'});
     var n=s.length;
     if(n<20)return {on:false,avail:false,n:n};
     var sp=[0,0,0],so=[0,0,0];
@@ -721,7 +745,9 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
   function render(r0,hName,aName){
     var r=r0,cal=calInfo();
     if(cal.on){r=Object.assign({},r0,applyCal(r0,cal))}
-    last={h:hName,a:aName,mode:mode,raw:r0,dsId:DS.active,league:(activeDs()||{}).name||''};
+    var kmap=(mode==='league')?dsMatches(DS.active):null;
+    var known=!!(kmap&&kmap[hName+'|'+aName]);
+    last={h:hName,a:aName,mode:mode,raw:r0,dsId:DS.active,league:(activeDs()||{}).name||'',known:known};
 
     var od=[parseFloat($('#o1').value),parseFloat($('#ox').value),parseFloat($('#o2').value)];
     var pr=[r.p1,r.px,r.p2],names=['П1','Х','П2'];
@@ -730,6 +756,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       return '<b class="edge '+(e>0.03?'ok':(e<-0.03?'bad':''))+'">'+(e>=0?'+':'')+(e*100).toFixed(0)+'%</b>';
     }
     var h='';
+    if(known)h+='<div class="warn"><b>Этот матч уже сыгран и есть в данных.</b> Модель училась на его результате, поэтому такой прогноз не считается проверкой. В журнале он получит пометку и не попадёт в статистику точности.</div>';
     h+='<div class="card"><div class="score">'
       +'<div><div class="t">'+esc(hName)+'</div><div class="xg">'+r.lh.toFixed(2)+'</div><div class="sub">ожид. голы</div></div>'
       +'<div class="dash">—</div>'
@@ -763,11 +790,14 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
     r.top.forEach(function(t){h+='<div><strong>'+t.s+'</strong><span>'+pc1(t.p)+'</span></div>'});
     h+='</div></div>';
 
-    h+='<div class="card"><h2>Тоталы</h2>'
+    h+='<div class="card"><h2>Тоталы и двойной шанс</h2>'
       +'<div class="kv"><span>Тотал больше 2.5</span><b>'+pc(r.o25)+'</b></div>'
       +'<div class="kv"><span>Тотал меньше 2.5</span><b>'+pc(1-r.o25)+'</b></div>'
       +'<div class="kv"><span>Обе забьют</span><b>'+pc(r.btts)+'</b></div>'
       +'<div class="kv"><span>Обе не забьют</span><b>'+pc(1-r.btts)+'</b></div>'
+      +'<div class="kv"><span>Двойной шанс 1Х (хозяева не проиграют)</span><b>'+pc(r.p1+r.px)+'</b></div>'
+      +'<div class="kv"><span>Двойной шанс Х2 (гости не проиграют)</span><b>'+pc(r.px+r.p2)+'</b></div>'
+      +'<div class="kv"><span>Двойной шанс 12 (без ничьей)</span><b>'+pc(r.p1+r.p2)+'</b></div>'
       +'</div>';
 
     var anyOdds=od.some(function(o){return o>1});
@@ -822,7 +852,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       var j=loadJ(),now=Date.now();
       var old=j.filter(function(e){return !e.res&&e.h===snap.h&&e.a===snap.a&&e.dsId===snap.dsId})[0];
       var rec={id:old?old.id:now,ts:old?old.ts:now,h:snap.h,a:snap.a,mode:snap.mode,dsId:snap.dsId,league:snap.league,
-        lh:raw.lh,la:raw.la,p1:raw.p1,px:raw.px,p2:raw.p2,o25:raw.o25,btts:raw.btts,res:null,added:false,bet:bet};
+        lh:raw.lh,la:raw.la,p1:raw.p1,px:raw.px,p2:raw.p2,o25:raw.o25,btts:raw.btts,res:null,added:false,bet:bet,known:snap.known};
       if(old)j[j.indexOf(old)]=rec;else j.push(rec);
       saveJ(j);
       this.disabled=true;
@@ -899,23 +929,37 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
 
   /* ---------- журнал ---------- */
   function renderJournal(){
-    var j=loadJ(),s=j.filter(function(e){return e.res}),n=s.length,h='';
+    var j=loadJ(),allS=j.filter(function(e){return e.res}),h='';
+    var cnt={pre:0,day:0,post:0,unk:0};
+    allS.forEach(function(e){cnt[classify(e)]++});
+    var doubtful=cnt.day+cnt.post+cnt.unk;
+    var view=store.get('fp_view')||(doubtful>0?'clean':'all');
+    var s=view==='clean'?allS.filter(function(e){return classify(e)==='pre'}):allS,n=s.length;
     if(!j.length){
       $('#jsummary').innerHTML='<div class="card empty">Журнал пуст. Сделайте прогноз и нажмите «Сохранить в журнал». Когда матч сыграют, впишите сюда счёт: приложение посчитает точность.</div>';
       $('#jcharts').innerHTML='';$('#jlist').innerHTML='';
       return;
     }
-    var hit=0,br=0,ohit=0,bhit=0;
+    var hit=0,br=0,ohit=0,bhit=0,exH=0,exD=0,exA=0,acH=0,acD=0,acA=0,inTop=0;
     s.forEach(function(e){
       var o=outcome(e.res),pr=[e.p1,e.px,e.p2];
+      exH+=e.p1;exD+=e.px;exA+=e.p2;
+      if(o===0)acH++;else if(o===1)acD++;else acA++;
+      var sc0=e.res.gh+':'+e.res.ga;
+      if(predict(e.lh,e.la).top.some(function(t){return t.s===sc0}))inTop++;
       if(pr.indexOf(Math.max.apply(null,pr))===o)hit++;
       for(var i=0;i<3;i++)br+=Math.pow(pr[i]-(i===o?1:0),2);
       if((e.o25>0.5)===(e.res.gh+e.res.ga>2))ohit++;
       if((e.btts>0.5)===(e.res.gh>0&&e.res.ga>0))bhit++;
     });
     h+='<div class="card"><h2>Точность модели</h2>';
+    if(allS.length){
+      h+='<div class="warn"><b>Какие прогнозы честные.</b> Из '+allS.length+' записанных результатов: сделаны до дня матча — '+cnt.pre+', в день матча — '+cnt.day+', когда матч уже был в данных — '+cnt.post+(cnt.unk?', порядок неясен — '+cnt.unk:'')+'. '
+        +(doubtful?'Проверкой считаются только прогнозы до матча: на уже сыгранных матчах модель «видела» ответ, и цифры получаются завышенными.':'Все прогнозы сделаны до матчей.')+'</div>'
+        +(doubtful?'<button class="ghost" id="btnView" style="width:100%;margin-top:8px">Показано: '+(view==='clean'?'только честные':'все прогнозы')+' (нажмите, чтобы переключить)</button>':'');
+    }
     if(n===0){
-      h+='<p class="note">Записанных результатов пока нет. Впишите счёт сыгранных матчей ниже.</p>';
+      h+='<p class="note">'+(allS.length&&view==='clean'?'Пока нет прогнозов, сделанных до матча. Новые прогнозы сохраняйте заранее, и они появятся здесь.':'Записанных результатов пока нет. Впишите счёт сыгранных матчей ниже.')+'</p>';
     } else {
       h+='<div class="stat">'
         +'<div><b>'+pc(hit/n)+'</b><span>исход угадан (1Х2)</span></div>'
@@ -923,7 +967,8 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
         +'<div><b>'+pc(ohit/n)+'</b><span>тотал 2.5 угадан</span></div>'
         +'<div><b>'+pc(bhit/n)+'</b><span>обе забьют угадано</span></div>'
         +'</div>'
-        +'<p class="note">Записано результатов: '+n+' из '+j.length+'. Ошибка Брайера: чем меньше, тем лучше. 0.667 — уровень угадывания наугад, около 0.58–0.62 — типичный уровень хорошей модели. На малом числе матчей цифры сильно колеблются.</p>';
+        +'<p class="note">Записано результатов: '+n+' из '+j.length+'. Ошибка Брайера: чем меньше, тем лучше. 0.667 — уровень угадывания наугад, около 0.58–0.62 — типичный уровень хорошей модели. На малом числе матчей цифры сильно колеблются.</p>'
+        +'<p class="note">Сколько исходов ожидала модель и сколько было на деле. Хозяева: '+exH.toFixed(1)+' и '+acH+'. Ничьи: '+exD.toFixed(1)+' и '+acD+'. Гости: '+exA.toFixed(1)+' и '+acA+'. Ничья редко бывает самым вероятным исходом (обычно её шанс 20–30%), поэтому в графе «исход угадан» ничьи почти не видны. Смотрите на эти числа: если они близки, модель честна. Точный счёт входил в пятёрку самых вероятных в '+inTop+' из '+n+' матчей.</p>';
     }
     var c=calInfo();
     h+='<h3>Калибровка</h3>';
@@ -935,7 +980,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
     }
 
     /* ставки */
-    var bets=s.filter(function(e){return e.bet}),open=j.filter(function(e){return !e.res&&e.bet}).length;
+    var bets=allS.filter(function(e){return e.bet}),open=j.filter(function(e){return !e.res&&e.bet}).length;
     var staked=0,profit=0;
     bets.forEach(function(e){
       staked+=e.bet.stake;
@@ -975,18 +1020,25 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       var pk=['П1','Х','П2'];
       l+='<div class="card"><div class="je-h"><span>'+esc(e.h)+' — '+esc(e.a)+'</span><button class="je-x" data-del="'+e.id+'" aria-label="Удалить">✕</button></div>'
         +'<p class="je-p">'+d+(e.league?' · '+esc(e.league):'')+'<br>П1 '+pc(e.p1)+', Х '+pc(e.px)+', П2 '+pc(e.p2)+'<br>Ожидаемые голы '+e.lh.toFixed(2)+' : '+e.la.toFixed(2)+'</p>';
+      var pe=predict(e.lh,e.la);
+      l+='<p class="je-p">Модель считала вероятными: '+pe.top.slice(0,3).map(function(t){return t.s+' ('+pc(t.p)+')'}).join(', ')+'</p>';
+      var cl=classify(e);
+      if(cl!=='pre')l+='<p class="je-p bad">'+(cl==='post'?'Матч уже был в данных: в статистику точности не входит.':(cl==='day'?'Сохранён в день матча: порядок неясен, в честную статистику не входит.':'Порядок неясен, в честную статистику не входит.'))+'</p>';
       if(e.bet)l+='<p class="je-p">Ставка: '+pk[e.bet.pick]+' @ '+e.bet.odds.toFixed(2)+', сумма '+money(e.bet.stake)+'</p>';
       if(e.res){
         var pr=[e.p1,e.px,e.p2],ok=pr.indexOf(Math.max.apply(null,pr))===outcome(e.res);
         l+='<div class="je-s '+(ok?'ok':'bad')+'">'+e.res.gh+':'+e.res.ga+(ok?' ✓':' ✗')+'</div>';
+        var real=e.res.gh+':'+e.res.ga,rk=-1,rp=0;
+        pe.all.forEach(function(t,ix){if(t.s===real){rk=ix+1;rp=t.p}});
+        l+='<p class="je-p">'+(rk>0?'Реальный счёт '+real+' модель ставила на '+rk+'-е место ('+(rp*100).toFixed(1)+'%)'+(rk<=5?', он входил в пятёрку.':'.'):'Реальный счёт '+real+' модель считала почти невозможным (меньше 0.1%).')+'</p>';
         if(e.bet){
           var won=outcome(e.res)===e.bet.pick,pf=won?e.bet.stake*(e.bet.odds-1):-e.bet.stake;
           l+='<p class="je-p '+(won?'ok':'bad')+'">Ставка '+(won?'выиграла':'проиграла')+': '+(pf>=0?'+':'')+money(pf)+'</p>';
         }
         if(e.added)l+='<p class="note">Результат добавлен в данные, модель переобучена.</p>';
       } else {
-        l+='<div class="je-r"><input type="number" inputmode="numeric" min="0" max="30" placeholder="Голы хозяев" aria-label="Голы хозяев">'
-          +'<input type="number" inputmode="numeric" min="0" max="30" placeholder="Голы гостей" aria-label="Голы гостей">'
+        l+='<div class="je-r"><input type="number" inputmode="numeric" min="0" max="30" placeholder="Хозяева" aria-label="Голы хозяев">'
+          +'<input type="number" inputmode="numeric" min="0" max="30" placeholder="Гости" aria-label="Голы гостей">'
           +'<button data-res="'+e.id+'">Записать</button></div>';
       }
       l+='</div>';
@@ -995,6 +1047,11 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
   }
 
   $('#jsummary').addEventListener('click',function(ev){
+    if(ev.target.id==='btnView'){
+      store.set('fp_view',(store.get('fp_view')||'clean')==='clean'?'all':'clean');
+      renderJournal();
+      return;
+    }
     if(ev.target.id==='btnCal'){
       store.set('fp_cal',store.get('fp_cal')==='0'?'1':'0');
       renderJournal();
