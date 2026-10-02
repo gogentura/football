@@ -74,7 +74,7 @@ button{font:inherit;font-weight:800;min-height:50px;border:0;border-radius:12px;
 .tbl th,.tbl td{padding:7px 4px;text-align:right;border-top:1px solid var(--line);white-space:nowrap}
 .tbl th:first-child,.tbl td:first-child{text-align:left;white-space:normal}
 .tbl th{color:var(--mute);font-weight:600;border-top:0}
-nav{position:fixed;left:0;right:0;bottom:0;display:grid;grid-template-columns:1fr 1fr 1fr;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav{position:fixed;left:0;right:0;bottom:0;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
 nav button{border-radius:0;background:transparent;color:var(--mute);min-height:62px;font-weight:700}
 nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
 .empty{text-align:center;color:var(--mute);padding:22px 8px}
@@ -91,6 +91,9 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
 .warn{background:var(--bg);border-left:4px solid var(--card-y);border-radius:8px;padding:8px 10px;font-size:14px;margin-top:10px}
 .sug{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
 .chart svg{display:block;width:100%;height:auto}
+nav button{font-size:15px;padding:0 4px}
+.cfg{font-size:14px;color:var(--mute);margin:2px 0 0}
+.rec{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:10px}
 </style>
 </head>
 <body>
@@ -131,7 +134,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       <p class="note">Возьмите ожидаемые голы (xG) с любого сайта статистики или оцените сами.</p>
     </div>
 
-    <label>Коэффициенты букмекера (необязательно)</label>
+    <label>Коэффициенты букмекера (нужны для сравнения с рынком)</label>
     <div class="row3">
       <input id="o1" type="number" inputmode="decimal" step="0.01" min="1" placeholder="П1" aria-label="Коэффициент на победу хозяев">
       <input id="ox" type="number" inputmode="decimal" step="0.01" min="1" placeholder="Х" aria-label="Коэффициент на ничью">
@@ -195,10 +198,11 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
     </select>
     <label for="selHA">Дом и выезд отдельно</label>
     <select id="selHA">
-      <option value="1">Учитывать</option>
+      <option value="1">Учитывать полностью</option>
+      <option value="0.5">Учитывать частично</option>
       <option value="0">Не учитывать</option>
     </select>
-    <p class="note">Изменения формы и дома с выездом действуют сразу. Вес свежих матчей пересчитывает модель.</p>
+    <p class="note">Изменения формы и дома с выездом действуют сразу. Вес свежих матчей пересчитывает модель. Эти настройки подбирает и Лаборатория (вкладка «Лаборатория»).</p>
   </div>
 
   <div class="card" id="ratingsCard" hidden>
@@ -226,11 +230,40 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
   <div id="jlist"></div>
 </section>
 
+<section id="tab-lab" class="tab">
+  <div class="card" id="labState"></div>
+
+  <div class="card">
+    <h2>Проверка на истории</h2>
+    <p class="note">Модель прогнозирует каждый уже сыгранный матч, зная только то, что было до него. Это честный экзамен, он не зависит от ваших прогнозов и растёт вместе с данными.</p>
+    <button class="primary" id="btnLabCheck">Запустить проверку</button>
+    <p class="note" id="labProg1"></p>
+    <div id="labCheck"></div>
+  </div>
+
+  <div class="card">
+    <h2>Подбор настроек</h2>
+    <p class="note">Приложение перебирает сотни сочетаний настроек (сжатие к среднему, вес свежих матчей, дом и выезд, форма, поправка ничьих) и ищет те, на которых история предсказывается лучше. Новые настройки принимаются, только если они лучше текущих и в первой, и во второй половине истории.</p>
+    <button class="primary" id="btnLabTune">Подобрать настройки</button>
+    <p class="note" id="labProg2"></p>
+    <div id="labTune"></div>
+  </div>
+
+  <div class="card" id="labHist"></div>
+
+  <div class="card">
+    <h2>Как это работает</h2>
+    <p class="note">Результаты всех матчей копятся в файле данных от сезона к сезону. Лаборатория использует их все. Если автоматическое развитие включено, приложение само раз в пару недель (или после 60 новых матчей) повторяет подбор и принимает улучшение, если оно проходит проверку. Каждое изменение записывается в историю, его можно откатить. Номер версии настроек сохраняется в каждой записи журнала.</p>
+    <p class="note">Предупреждение: чем больше перебирается вариантов, тем выше шанс «подогнать» настройки под случайность. Поэтому нужна улучшенная точность в обеих половинах истории и запас в 0.003 по лог-потерям. На небольшой истории выводы временные, они будут уточняться.</p>
+  </div>
+</section>
+
 </main>
 <nav>
   <button data-tab="match" class="on">Прогноз</button>
   <button data-tab="data">Данные</button>
   <button data-tab="journal">Журнал</button>
+  <button data-tab="lab">Лаборатория</button>
 </nav>
 
 <script>
@@ -243,7 +276,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
   function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 
   /*PURE-START*/
-  var S={half:0,form:0.5,ha:true,bank:1000,aliases:{},nomerge:{}};
+  var S={half:0,form:0.5,ha:1,bank:1000,K:2,K2:8,K3:3,draw:1,ver:1,auto:true,hist:[],lastTune:null,aliases:{},nomerge:{}};
 
   /* ----- названия команд ----- */
   var STOP={'фк':1,'fc':1,'cf':1,'sc':1,'ac':1,'клуб':1};
@@ -363,7 +396,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
   }
 
   /* ----- модель ----- */
-  function fit(matches,half){
+  function fit(matches,half,P){
     var n=matches.length,i;
     var teams=Array.from(new Set(matches.reduce(function(a,m){a.push(m.h,m.a);return a},[]))).sort(function(x,y){return x.localeCompare(y,'ru')});
     var w=matches.map(function(_,k){return half>0?Math.pow(0.5,(n-1-k)/half):1});
@@ -371,7 +404,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
     matches.forEach(function(m,k){sw+=w[k];sh+=w[k]*m.gh;sa+=w[k]*m.ga});
     var hAvg=sh/sw,aAvg=sa/sw,att={},def={};
     teams.forEach(function(t){att[t]=1;def[t]=1});
-    var K=2;
+    var K=(P&&P.K)||2;
     for(var it=0;it<60;it++){
       var na={},nd={};
       teams.forEach(function(t){
@@ -389,7 +422,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       teams.forEach(function(t){att[t]=na[t]/ma;def[t]=nd[t]/md});
     }
     /* дом и выезд: поправки к общей силе с сильным сжатием к 1 */
-    var K2=8,aH={},dH={},aA={},dA={};
+    var K2=(P&&P.K2)||8,aH={},dH={},aA={},dA={};
     teams.forEach(function(t){
       var g1=0,e1=0,g2=0,e2=0,g3=0,e3=0,g4=0,e4=0;
       for(var k=0;k<n;k++){
@@ -406,7 +439,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       aA[t]=(g3+K2)/(e3+K2);dA[t]=(g4+K2)/(e4+K2);
     });
     /* форма: последние 5 матчей каждой команды */
-    var K3=3,fg={},fe={},fga={},fex={},fc={},fr={},fa={},fd={},fstr={};
+    var K3=(P&&P.K3)||3,fg={},fe={},fga={},fex={},fc={},fr={},fa={},fd={},fstr={};
     teams.forEach(function(t){fg[t]=0;fe[t]=0;fga[t]=0;fex[t]=0;fc[t]=0;fr[t]=[]});
     for(i=n-1;i>=0;i--){
       var mm=matches[i],t1=mm.h,t2=mm.a;
@@ -446,13 +479,16 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       aH:aH,dH:dH,aA:aA,dA:dA,fa:fa,fd:fd,form:fstr,elo:elo,HA:HA,dr:dr};
   }
   function clampL(x){return Math.max(0.15,Math.min(5,x))}
-  function lambdas(m,h,a){
+  function haWeight(){return S.ha===true?1:(S.ha===false?0:(+S.ha||0))}
+  function lambdas(m,h,a,P){
     var lh=m.hAvg*m.att[h]*m.def[a],la=m.aAvg*m.att[a]*m.def[h];
-    if(S.ha){lh*=m.aH[h]*m.dA[a];la*=m.aA[a]*m.dH[h]}
-    if(S.form>0){
-      var b=S.form;
-      lh*=Math.pow(m.fa[h],b)*Math.pow(m.fd[a],b);
-      la*=Math.pow(m.fa[a],b)*Math.pow(m.fd[h],b);
+    var haw=(P&&P.ha!==undefined)?P.ha:haWeight(),fw=(P&&P.form!==undefined)?P.form:S.form;
+    if(haw>0){
+      lh*=Math.pow(m.aH[h]*m.dA[a],haw);la*=Math.pow(m.aA[a]*m.dH[h],haw);
+    }
+    if(fw>0){
+      lh*=Math.pow(m.fa[h],fw)*Math.pow(m.fd[a],fw);
+      la*=Math.pow(m.fa[a],fw)*Math.pow(m.fd[h],fw);
     }
     return {lh:clampL(lh),la:clampL(la)};
   }
@@ -484,12 +520,121 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
     list.sort(function(a,b){return b.p-a.p});
     return {p1:p1,px:px,p2:p2,o25:o25,btts:btts,top:list.slice(0,5),all:list,lh:lh,la:la};
   }
+
+  /* ----- лаборатория: проверка на истории и подбор настроек ----- */
+  function boostDraw(p1,px,p2,b){
+    if(!b||b===1)return [p1,px,p2];
+    var d=Math.min(0.9,px*b),sm=p1+p2,k=sm>0?(1-d)/sm:1;
+    return [p1*k,d,p2*k];
+  }
+  function adjustDraw(r){
+    var q=boostDraw(r.p1,r.px,r.p2,S.draw);
+    return Object.assign({},r,{p1:q[0],px:q[1],p2:q[2]});
+  }
+  function newAcc(){return {n:[0,0],ll:[0,0],br:[0,0],hit:[0,0]}}
+  function addAcc(a,hf,p,o){
+    a.n[hf]++;
+    a.ll[hf]+=-Math.log(Math.max(p[o],1e-6));
+    var br=0,best=0,i;
+    for(i=0;i<3;i++){br+=Math.pow(p[i]-(i===o?1:0),2);if(p[i]>p[best])best=i}
+    a.br[hf]+=br;
+    if(best===o)a.hit[hf]++;
+  }
+  function labPrepare(leagues){
+    var out=[],dates=[],WARM=2;
+    leagues.forEach(function(L){
+      var T=Object.keys(L.matches.reduce(function(a,m){a[m.h]=1;a[m.a]=1;return a},{})).length;
+      var C=Math.max(6,Math.round(T/2)),start=WARM*C;
+      if(L.matches.length<start+C/2)return;
+      out.push({name:L.name,matches:L.matches,C:C,start:start});
+      for(var i=start;i<L.matches.length;i++)dates.push(L.matches[i].date||'');
+    });
+    dates.sort();
+    return {leagues:out,cutoff:dates.length?dates[Math.floor(dates.length/2)]:'',n:dates.length};
+  }
+  function labGrid(champ){
+    var cfgs=[],id=0,seen={};
+    function add(c,isChamp){
+      var key=[c.K,c.half,c.ha,c.form,c.draw].join('|');
+      if(seen[key])return;
+      seen[key]=1;c.id=id++;c.champ=!!isChamp;cfgs.push(c);
+    }
+    add({K:champ.K,half:champ.half,ha:champ.ha,form:champ.form,draw:champ.draw},true);
+    [1,2,4].forEach(function(K){[0,100,30].forEach(function(h){[0,0.5,1].forEach(function(ha){[0,0.5,1].forEach(function(f){[1,1.15,1.3].forEach(function(d){
+      add({K:K,half:h,ha:ha,form:f,draw:d},false);
+    })})})})});
+    return cfgs;
+  }
+  function labGroups(cfgs){
+    var g={},out=[];
+    cfgs.forEach(function(c){
+      var k=c.K+'|'+c.half;
+      if(!g[k]){g[k]={K:c.K,half:c.half,cfgs:[],champ:false};out.push(g[k])}
+      g[k].cfgs.push(c);
+      if(c.champ)g[k].champ=true;
+    });
+    return out;
+  }
+  function labNewRes(cfgs){
+    return {cfg:cfgs.map(newAcc),league:{},draw:{},elo:newAcc(),base:newAcc()};
+  }
+  function labPass(L,grp,res,cutoff){
+    var i,j;
+    for(i=L.start;i<L.matches.length;i+=L.C){
+      var m=fit(L.matches.slice(0,i),grp.half,{K:grp.K}),test=L.matches.slice(i,i+L.C);
+      for(j=0;j<test.length;j++){
+        var g=test[j],o=g.gh>g.ga?0:(g.gh===g.ga?1:2),hf=(g.date||'')>=cutoff?1:0;
+        var known=m.att[g.h]!==undefined&&m.att[g.a]!==undefined;
+        for(var ci=0;ci<grp.cfgs.length;ci++){
+          var c=grp.cfgs[ci];
+          var lam=known?lambdas(m,g.h,g.a,{ha:c.ha,form:c.form}):{lh:m.hAvg,la:m.aAvg};
+          var r=predict(lam.lh,lam.la),q=boostDraw(r.p1,r.px,r.p2,c.draw);
+          addAcc(res.cfg[c.id],hf,q,o);
+          if(c.champ){
+            var al=res.league[L.name]||(res.league[L.name]=newAcc());
+            addAcc(al,hf,q,o);
+            var dl=res.draw[L.name]||(res.draw[L.name]={ex:0,ac:0,n:0});
+            dl.ex+=q[1];dl.ac+=(o===1?1:0);dl.n++;
+          }
+        }
+        if(grp.champ){
+          if(known){var eq=eloProbs(m,g.h,g.a);addAcc(res.elo,hf,[eq.p1,eq.px,eq.p2],o)}
+          var b0=predict(m.hAvg,m.aAvg);addAcc(res.base,hf,[b0.p1,b0.px,b0.p2],o);
+        }
+      }
+    }
+  }
+  function accSum(a){
+    var n=a.n[0]+a.n[1];
+    return {n:n,ll:n?(a.ll[0]+a.ll[1])/n:0,br:n?(a.br[0]+a.br[1])/n:0,hit:n?(a.hit[0]+a.hit[1])/n:0,
+      ll1:a.n[0]?a.ll[0]/a.n[0]:0,ll2:a.n[1]?a.ll[1]/a.n[1]:0,n1:a.n[0],n2:a.n[1]};
+  }
+  function labPick(cfgs,res){
+    var ch=accSum(res.cfg[0]),rows=cfgs.map(function(c){return {c:c,s:accSum(res.cfg[c.id])}});
+    var cand=rows.filter(function(r){return !r.c.champ}).sort(function(x,y){return x.s.ll-y.s.ll});
+    cand.forEach(function(r){
+      r.gain=ch.ll-r.s.ll;
+      r.pass=r.gain>=0.003&&r.s.ll1<ch.ll1&&r.s.ll2<ch.ll2;
+    });
+    return {champ:ch,top:cand.slice(0,3),best:cand.filter(function(r){return r.pass})[0]||null};
+  }
+  function labRunSync(leagues,champ,grid){
+    var cfgs=grid?labGrid(champ):[Object.assign({id:0,champ:true},champ)];
+    var prep=labPrepare(leagues),res=labNewRes(cfgs);
+    labGroups(cfgs).forEach(function(grp){prep.leagues.forEach(function(L){labPass(L,grp,res,prep.cutoff)})});
+    return {prep:prep,cfgs:cfgs,res:res,pick:labPick(cfgs,res)};
+  }
   /*PURE-END*/
 
   /* ---------- состояние ---------- */
   var DS={list:[],active:null};
   var model=null,mode='league',last=null,TXT=$('#txt'),sugg=[],autoUpdated='';
 
+  function ensureOpt(sel,val,label){
+    var has=false;
+    Array.prototype.forEach.call(sel.options,function(o){if(o.value===val)has=true});
+    if(!has){var o=document.createElement('option');o.value=val;o.textContent=label;sel.appendChild(o)}
+  }
   function persistDs(){store.set('fp_datasets',JSON.stringify(DS))}
   function persistS(){store.set('fp_settings',JSON.stringify(S))}
   function activeDs(){return DS.list.filter(function(d){return d.id===DS.active})[0]}
@@ -504,7 +649,8 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
     var st=store.get('fp_settings');
     if(st){try{var s=JSON.parse(st);Object.keys(s).forEach(function(k){S[k]=s[k]})}catch(e){}}
     else if(store.get('fp_half'))S.half=parseInt(store.get('fp_half'),10)||0;
-    S.aliases=S.aliases||{};S.nomerge=S.nomerge||{};
+    S.aliases=S.aliases||{};S.nomerge=S.nomerge||{};S.hist=S.hist||[];
+    if(S.ha===true)S.ha=1;else if(S.ha===false)S.ha=0;
     if(!DS.list.length){
       DS={list:[{id:newId(),name:'Основной набор',text:store.get('fp_text')||'',from:''}],active:null};
     }
@@ -518,6 +664,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('on',t.id==='tab-'+b.dataset.tab)});
       window.scrollTo(0,0);
       if(b.dataset.tab==='journal')renderJournal();
+      if(b.dataset.tab==='lab')renderLab();
     });
   });
   document.querySelectorAll('#modeSeg button').forEach(function(b){
@@ -545,9 +692,10 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
     TXT.value=d.text||'';
     $('#dsName').value=d.name;
     $('#dsFrom').value=d.from||'';
+    ensureOpt($('#selHalf'),String(S.half),'Подобрано: период '+S.half+' матчей');
     $('#selHalf').value=String(S.half);
     $('#selForm').value=String(S.form);
-    $('#selHA').value=S.ha?'1':'0';
+    $('#selHA').value=String(haWeight());
   }
   function setActive(id){
     syncText();
@@ -582,7 +730,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
 
   $('#selHalf').addEventListener('change',function(){S.half=parseInt(this.value,10)||0;persistS();train()});
   $('#selForm').addEventListener('change',function(){S.form=parseFloat(this.value)||0;persistS()});
-  $('#selHA').addEventListener('change',function(){S.ha=this.value==='1';persistS()});
+  $('#selHA').addEventListener('change',function(){S.ha=parseFloat(this.value)||0;persistS()});
 
   /* ---------- обучение ---------- */
   function train(){
@@ -594,7 +742,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       model=null;
       info='Найдено матчей: '+ms.length+'. Для модели нужно хотя бы 10, лучше 100 и больше.';
     } else {
-      model=fit(ms,S.half);
+      model=fit(ms,S.half,{K:S.K,K2:S.K2,K3:S.K3});
       info='Готово: матчей — '+model.n+', команд — '+model.teams.length+'. Средние голы за матч: хозяева '+model.hAvg.toFixed(2)+', гости '+model.aAvg.toFixed(2)+'.';
     }
     if(skipped)info+=' Пропущено по дате: '+skipped+'.';
@@ -847,8 +995,9 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
     });
     $('#btnSave').addEventListener('click',function(){
       var raw=snap.raw,bet=null,pick=$('#betPick').value,stake=parseFloat($('#betStake').value);
+      var odNow=[parseFloat($('#o1').value),parseFloat($('#ox').value),parseFloat($('#o2').value)];
       if(pick!==''){
-        var oo=od[+pick];
+        var oo=odNow[+pick];
         if(!(oo>1)||!(stake>0)){
           $('#betMsg').textContent='Для ставки укажите коэффициент выбранного исхода вверху страницы и сумму больше нуля.';
           return;
@@ -858,7 +1007,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       var j=loadJ(),now=Date.now();
       var old=j.filter(function(e){return !e.res&&e.h===snap.h&&e.a===snap.a&&e.dsId===snap.dsId})[0];
       var rec={id:old?old.id:now,ts:old?old.ts:now,h:snap.h,a:snap.a,mode:snap.mode,dsId:snap.dsId,league:snap.league,
-        lh:raw.lh,la:raw.la,p1:raw.p1,px:raw.px,p2:raw.p2,o25:raw.o25,btts:raw.btts,res:null,added:false,bet:bet,known:snap.known};
+        lh:raw.lh,la:raw.la,p1:raw.p1,px:raw.px,p2:raw.p2,o25:raw.o25,btts:raw.btts,res:null,added:false,bet:bet,known:snap.known,od:(odNow.every(function(o){return o>1})?odNow:null),ver:S.ver||1};
       if(old)j[j.indexOf(old)]=rec;else j.push(rec);
       saveJ(j);
       this.disabled=true;
@@ -879,7 +1028,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
     var h=$('#selHome').value,a=$('#selAway').value;
     if(h===a){$('#result').innerHTML='<div class="card empty">Выберите две разные команды.</div>';return}
     var L=lambdas(model,h,a);
-    render(predict(L.lh,L.la),h,a);
+    render(adjustDraw(predict(L.lh,L.la)),h,a);
   });
 
   /* ---------- графики ---------- */
@@ -931,6 +1080,46 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       g+='<circle cx="'+X(p.x).toFixed(1)+'" cy="'+Y(p.y).toFixed(1)+'" r="'+(3+Math.min(6,p.c/6)).toFixed(1)+'" style="fill:var(--away)"/>';
     });
     return '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Калибровка: предсказанная вероятность и как часто исход сбывался">'+g+'</svg>';
+  }
+
+  function marketCard(list){
+    var r=list.filter(function(e){return e.od&&e.od.length===3&&e.od.every(function(o){return o>1})});
+    if(!r.length){
+      return '<div class="card"><h2>Модель против рынка</h2><p class="note">Пока нет прогнозов с коэффициентами букмекера. Вводите три коэффициента (П1, Х, П2) на вкладке «Прогноз» перед сохранением: приложение сравнит модель с рынком на одних и тех же матчах и покажет, есть ли у модели преимущество.</p></div>';
+    }
+    var bm=0,bk=0,bb=0,lm=0,lk=0,lb=0,marg=0,vb=0,vp=0;
+    r.forEach(function(e){
+      var o=outcome(e.res),p=[e.p1,e.px,e.p2];
+      var inv=e.od.map(function(x){return 1/x}),sum=inv[0]+inv[1]+inv[2];
+      var q=inv.map(function(x){return x/sum}),b=p.map(function(x,i){return (x+q[i])/2});
+      marg+=sum-1;
+      var i;
+      for(i=0;i<3;i++){
+        var y=i===o?1:0;
+        bm+=Math.pow(p[i]-y,2);bk+=Math.pow(q[i]-y,2);bb+=Math.pow(b[i]-y,2);
+      }
+      lm+=-Math.log(Math.max(p[o],1e-6));lk+=-Math.log(Math.max(q[o],1e-6));lb+=-Math.log(Math.max(b[o],1e-6));
+      var best=-1,be=0.03;
+      for(i=0;i<3;i++){var ed=p[i]*e.od[i]-1;if(ed>be){be=ed;best=i}}
+      if(best>=0){vb++;vp+=(best===o)?e.od[best]-1:-1}
+    });
+    var n=r.length;
+    bm/=n;bk/=n;bb/=n;lm/=n;lk/=n;lb/=n;marg/=n;
+    var better=bm<bk;
+    var h='<div class="card"><h2>Модель против рынка</h2>'
+      +'<p class="note">Сравнение на '+n+' одинаковых матчах, где вы вводили коэффициенты. Чем меньше число, тем лучше.</p>'
+      +'<div class="kv"><span>Ошибка Брайера: модель</span><b>'+bm.toFixed(3)+'</b></div>'
+      +'<div class="kv"><span>Ошибка Брайера: рынок</span><b>'+bk.toFixed(3)+'</b></div>'
+      +'<div class="kv"><span>Ошибка Брайера: смесь 50 на 50</span><b>'+bb.toFixed(3)+'</b></div>'
+      +'<div class="kv"><span>Лог-потери: модель / рынок / смесь</span><b>'+lm.toFixed(3)+' / '+lk.toFixed(3)+' / '+lb.toFixed(3)+'</b></div>'
+      +'<div class="kv"><span>Средняя маржа букмекера</span><b>'+(marg*100).toFixed(1)+'%</b></div>'
+      +'<div class="warn '+(better?'okb':'')+'">'+(better?'Пока модель точнее рынка, разница по Брайеру '+(bk-bm).toFixed(3)+'.':'Пока рынок точнее модели, разница по Брайеру '+(bm-bk).toFixed(3)+'.')
+      +(n<100?' На '+n+' матчах это почти ничего не доказывает: нужны сотни.':'')+'</div>'
+      +'<h3>Виртуальные ставки без денег</h3>'
+      +(vb?'<div class="stat"><div><b class="'+(vp>=0?'ok':'bad')+'">'+(vp>=0?'+':'')+vp.toFixed(1)+'</b><span>прибыль, единиц</span></div><div><b class="'+(vp>=0?'ok':'bad')+'">'+(vp/vb*100).toFixed(1)+'%</b><span>ROI на '+vb+' ставках</span></div></div>':'<p class="note">Ставок нет: перевеса модели над рынком больше 3% пока не было.</p>')
+      +'<p class="note">Считается так: на каждый матч одна единица на исход с наибольшим перевесом (больше 3%), без ваших реальных ставок. Так можно проверить преимущество без риска. Чтобы отличить настоящее преимущество от удачи, нужны порядка тысяч ставок, на сотнях результат почти всегда случаен.</p>'
+      +'</div>';
+    return h;
   }
 
   /* ---------- журнал ---------- */
@@ -1010,6 +1199,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
 
     /* графики */
     var cg='';
+    if(allS.length)cg+=marketCard(s);
     if(n>=3){
       cg+='<div class="card chart"><h2>Точность со временем</h2>'+chartAcc(s)+'<p class="note">Доля угаданных исходов, накопленная по порядку прогнозов. Линия должна держаться выше пунктира.</p></div>';
     }
@@ -1138,8 +1328,9 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
       var s=o.settings;
       S.half=s.half!==undefined?s.half:S.half;
       S.form=s.form!==undefined?s.form:S.form;
-      S.ha=s.ha!==undefined?s.ha:S.ha;
+      S.ha=s.ha!==undefined?(s.ha===true?1:(s.ha===false?0:s.ha)):S.ha;
       S.bank=s.bank!==undefined?s.bank:S.bank;
+      ['K','K2','K3','draw','ver','auto','hist','lastTune'].forEach(function(k){if(s[k]!==undefined)S[k]=s[k]});
       Object.keys(s.aliases||{}).forEach(function(k){S.aliases[k]=s.aliases[k]});
       Object.keys(s.nomerge||{}).forEach(function(k){S.nomerge[k]=s.nomerge[k]});
     }
@@ -1157,6 +1348,187 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
     if(!activeDs())DS.active=DS.list[0].id;
     loadUi();train();renderJournal();
     $('#bakMsg').textContent='Импорт выполнен. Новых наборов: '+addedDs+', новых записей журнала: '+jn+'.';
+  });
+
+
+  /* ---------- лаборатория ---------- */
+  var labBusy=false,labLast={};
+  function tick(){return new Promise(function(r){setTimeout(r,0)})}
+  function labLeagues(){
+    var out=[];
+    DS.list.forEach(function(d){
+      if(!d.auto)return;
+      var ms=parseAll(d.text||'').matches;
+      if(ms.length>=40&&ms.every(function(m){return m.date}))out.push({name:d.name.replace(' (авто)',''),matches:ms});
+    });
+    return out;
+  }
+  function autoCount(){
+    var n=0;
+    DS.list.forEach(function(d){if(d.auto)n+=parseAll(d.text||'').matches.length});
+    return n;
+  }
+  function curCfg(){return {K:S.K||2,half:S.half||0,ha:haWeight(),form:S.form,draw:S.draw||1}}
+  async function labRun(grid,onProg){
+    var leagues=labLeagues(),champ=curCfg();
+    var cfgs=grid?labGrid(champ):[Object.assign({id:0,champ:true},champ)];
+    var prep=labPrepare(leagues),res=labNewRes(cfgs);
+    if(prep.n<40)return {prep:prep,cfgs:cfgs,res:res,tooFew:true};
+    var groups=labGroups(cfgs),total=groups.length*prep.leagues.length,done=0;
+    for(var gi=0;gi<groups.length;gi++){
+      for(var li=0;li<prep.leagues.length;li++){
+        labPass(prep.leagues[li],groups[gi],res,prep.cutoff);
+        done++;
+        if(onProg)onProg(done,total);
+        await tick();
+      }
+    }
+    return {prep:prep,cfgs:cfgs,res:res,pick:labPick(cfgs,res)};
+  }
+  function cfgText(c){
+    var ha={'0':'нет','0.5':'частично','1':'полностью'}[String(c.ha)],fm={'0':'нет','0.5':'умеренно','1':'сильно'}[String(c.form)];
+    return 'сжатие к среднему '+c.K+'; вес свежих: '+(c.half?'период '+c.half+' матчей':'все матчи равны')+'; дом и выезд: '+ha+'; форма: '+fm+'; ничьи ×'+(+c.draw).toFixed(2);
+  }
+  function cfgDiff(f,t){
+    var out=[];
+    if(f.K!==t.K)out.push('сжатие '+f.K+' → '+t.K);
+    if(f.half!==t.half)out.push('свежесть '+(f.half||'нет')+' → '+(t.half||'нет'));
+    if(f.ha!==t.ha)out.push('дом и выезд '+f.ha+' → '+t.ha);
+    if(f.form!==t.form)out.push('форма '+f.form+' → '+t.form);
+    if(f.draw!==t.draw)out.push('ничьи ×'+(+f.draw).toFixed(2)+' → ×'+(+t.draw).toFixed(2));
+    return out.length?out.join(', '):'без изменений';
+  }
+  function dayStr(ts){return new Date(ts).toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}
+
+  function renderLab(){
+    var lg=labLeagues(),tot=0;
+    lg.forEach(function(L){tot+=L.matches.length});
+    var h='<h2>Состояние модели</h2>'
+      +'<div class="kv"><span>Версия настроек</span><b>v'+(S.ver||1)+'</b></div>'
+      +'<div class="kv"><span>Текущие настройки</span><b style="max-width:62%">'+cfgText(curCfg())+'</b></div>'
+      +'<div class="kv"><span>Данные для проверки</span><b>'+tot+' матчей, '+lg.length+' лиг</b></div>'
+      +'<div class="kv"><span>Последний подбор</span><b>'+(S.lastTune?dayStr(S.lastTune.ts):'ещё не было')+'</b></div>'
+      +'<button class="ghost" id="btnAutoDev" style="width:100%;margin-top:10px">Автоматическое развитие: '+(S.auto===false?'выключено':'включено')+' (нажмите, чтобы переключить)</button>';
+    $('#labState').innerHTML=h;
+    var hh='<h2>История изменений</h2>';
+    var hist=(S.hist||[]).slice().reverse();
+    if(!hist.length)hh+='<p class="note">Изменений пока не было.</p>';
+    hist.slice(0,8).forEach(function(e){
+      hh+='<div class="kv"><span>'+dayStr(e.ts)+', v'+e.ver+(e.undo?' (откат)':(e.auto?' (авто)':' (вручную)'))+'</span><b style="max-width:62%;font-weight:400;font-size:14px">'+cfgDiff(e.from,e.to)+(e.gain?'. Выигрыш '+e.gain.toFixed(3)+' на '+e.n+' матчах':'')+'</b></div>';
+    });
+    var last=(S.hist||[])[(S.hist||[]).length-1];
+    if(last&&!last.undo)hh+='<button class="ghost" id="btnUndo" style="width:100%;margin-top:10px">Откатить последнее изменение</button><p class="note">После отката автоматическое развитие выключится, чтобы изменение не вернулось само.</p>';
+    $('#labHist').innerHTML=hh;
+  }
+
+  function renderCheck(out){
+    var el=$('#labCheck');
+    if(out.tooFew){
+      el.innerHTML='<div class="warn">Пока слишком мало сыгранных матчей для проверки: после первых двух туров нужно хотя бы 40 (сейчас '+out.prep.n+'). Подождите несколько туров.</div>';
+      return;
+    }
+    var R=out.res,m=accSum(R.cfg[0]),e=accSum(R.elo),b=accSum(R.base);
+    function row(n,x){return '<tr><td>'+n+'</td><td>'+x.ll.toFixed(3)+'</td><td>'+x.br.toFixed(3)+'</td><td>'+pc(x.hit)+'</td></tr>'}
+    var h='<p class="note">Проверено прогнозов: '+m.n+' в '+out.prep.leagues.length+' лигах. Чем меньше лог-потери и Брайер, тем лучше: 1.099 — угадывание наугад, у хороших моделей и букмекеров порядка 0.95–1.0.</p>'
+      +'<div style="overflow-x:auto"><table class="tbl"><tr><th>Кто</th><th>Лог-потери</th><th>Брайер</th><th>Исход</th></tr>'
+      +row('Модель',m)+row('Эло',e)+row('Эталон: средние голы лиги',b)+'</table></div>';
+    var d=b.ll-m.ll;
+    h+='<div class="warn">'+(d>0.005
+      ?'Модель лучше эталона на '+d.toFixed(3)+' по лог-потерям: команды она различает.'
+      :'Модель пока не лучше эталона «все команды равны» ('+(d>=0?'разница '+d.toFixed(3)+' в пользу модели':'эталон лучше на '+(-d).toFixed(3))+'). Для начала сезона это ожидаемо: данных о командах мало. Подбор настроек как раз пытается это исправить.')+'</div>';
+    var names=Object.keys(R.league),exs=0,acs=0;
+    h+='<h3>По лигам</h3><div style="overflow-x:auto"><table class="tbl"><tr><th>Лига</th><th>Матчей</th><th>Лог-потери</th><th>Ничьи</th></tr>';
+    names.forEach(function(nm){
+      var x=accSum(R.league[nm]),dr=R.draw[nm];
+      exs+=dr.ex;acs+=dr.ac;
+      h+='<tr><td>'+esc(nm)+'</td><td>'+x.n+'</td><td>'+x.ll.toFixed(3)+'</td><td>'+dr.ex.toFixed(1)+' / '+dr.ac+'</td></tr>';
+    });
+    h+='</table></div><p class="note">В столбце «Ничьи»: сколько ожидала модель и сколько было на деле. Всего: '+exs.toFixed(1)+' и '+acs+'.</p>';
+    el.innerHTML=h;
+  }
+
+  function renderTune(out){
+    var el=$('#labTune');
+    if(out.tooFew){el.innerHTML='<div class="warn">Пока слишком мало сыгранных матчей для подбора: после первых двух туров нужно хотя бы 40 (сейчас '+out.prep.n+'). Подождите несколько туров.</div>';return}
+    var P=out.pick,h='<p class="note">Проверено '+out.cfgs.length+' сочетаний на '+P.champ.n+' прогнозах. Текущие настройки: лог-потери '+P.champ.ll.toFixed(4)+'.</p>';
+    P.top.forEach(function(r,i){
+      h+='<div class="kv"><span>'+(i+1)+'. '+cfgText(r.c)+'</span><b>'+r.s.ll.toFixed(4)+(r.pass?' ✓':'')+'</b></div>';
+    });
+    if(P.best){
+      h+='<div class="rec"><b>Рекомендация:</b> '+cfgText(P.best.c)+'. Выигрыш '+P.best.gain.toFixed(3)+' по лог-потерям, лучше текущих в обеих половинах истории.<button class="primary" id="btnApplyBest">Применить</button></div>';
+    } else {
+      h+='<div class="warn">Сочетания, которое надёжно лучше текущего (запас 0.003 и улучшение в обеих половинах истории), пока нет. Оставляем текущие настройки.</div>';
+    }
+    el.innerHTML=h;
+  }
+
+  function applyCfg(c,gain,n,auto){
+    var from=curCfg();
+    S.K=c.K;S.half=c.half;S.ha=c.ha;S.form=c.form;S.draw=c.draw;S.ver=(S.ver||1)+1;
+    S.hist=S.hist||[];
+    S.hist.push({ts:Date.now(),ver:S.ver,from:from,to:{K:c.K,half:c.half,ha:c.ha,form:c.form,draw:c.draw},gain:gain,n:n,auto:!!auto});
+    if(S.hist.length>20)S.hist.shift();
+    persistS();loadUi();train();renderLab();
+  }
+  function undoLast(){
+    var h=(S.hist||[])[(S.hist||[]).length-1];
+    if(!h||h.undo)return;
+    var cur=curCfg(),f=h.from;
+    S.K=f.K;S.half=f.half;S.ha=f.ha;S.form=f.form;S.draw=f.draw;S.ver=(S.ver||1)+1;S.auto=false;
+    S.hist.push({ts:Date.now(),ver:S.ver,from:cur,to:f,gain:0,n:0,undo:true});
+    if(S.hist.length>20)S.hist.shift();
+    persistS();loadUi();train();renderLab();
+  }
+
+  async function runCheckUi(){
+    if(labBusy)return;
+    labBusy=true;$('#btnLabCheck').disabled=true;$('#labCheck').innerHTML='';
+    try{
+      var out=await labRun(false,function(d,t){$('#labProg1').textContent='Проверка: '+d+' из '+t});
+      $('#labProg1').textContent='';
+      renderCheck(out);
+    }finally{labBusy=false;$('#btnLabCheck').disabled=false}
+  }
+  async function runTuneUi(auto){
+    if(labBusy)return null;
+    labBusy=true;
+    if(!auto){$('#btnLabTune').disabled=true;$('#labTune').innerHTML=''}
+    var out=null;
+    try{
+      out=await labRun(true,function(d,t){if(!auto)$('#labProg2').textContent='Подбор: '+d+' из '+t+'. Это может занять около минуты.'});
+      if(!auto){$('#labProg2').textContent='';renderTune(out);labLast.tune=out}
+      if(!out.tooFew){
+        S.lastTune={ts:Date.now(),n:autoCount()};persistS();
+        if(auto&&out.pick.best&&out.prep.n>=150){
+          var b=out.pick.best;
+          labBusy=false;
+          applyCfg(b.c,b.gain,out.pick.champ.n,true);
+        }
+      }
+    }finally{labBusy=false;if(!auto)$('#btnLabTune').disabled=false}
+    if($('#tab-lab').classList.contains('on'))renderLab();
+    return out;
+  }
+  function maybeAutoTune(){
+    if(S.auto===false||labBusy)return;
+    var nNow=autoCount(),lt=S.lastTune;
+    if(nNow<200)return;
+    if(lt&&(nNow-lt.n<60)&&(Date.now()-lt.ts<14*86400000))return;
+    runTuneUi(true);
+  }
+
+  $('#btnLabCheck').addEventListener('click',runCheckUi);
+  $('#btnLabTune').addEventListener('click',function(){runTuneUi(false)});
+  $('#labState').addEventListener('click',function(ev){
+    if(ev.target.id==='btnAutoDev'){S.auto=(S.auto===false);persistS();renderLab()}
+  });
+  $('#labHist').addEventListener('click',function(ev){if(ev.target.id==='btnUndo')undoLast()});
+  $('#labTune').addEventListener('click',function(ev){
+    if(ev.target.id==='btnApplyBest'&&labLast.tune&&labLast.tune.pick&&labLast.tune.pick.best){
+      var b=labLast.tune.pick.best;
+      applyCfg(b.c,b.gain,labLast.tune.pick.champ.n,false);
+      $('#labTune').innerHTML='<div class="warn">Применено: версия v'+S.ver+'.</div>';
+    }
   });
 
   /* ---------- старт ---------- */
@@ -1189,6 +1561,7 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
         autoUpdated=isNaN(u)?'':u.toLocaleDateString('ru-RU',{day:'numeric',month:'long'});
       }
       if(changed||autoUpdated){persistDs();loadUi();train()}
+      setTimeout(maybeAutoTune,2500);
     }).catch(function(){});
   }
   loadAuto();
