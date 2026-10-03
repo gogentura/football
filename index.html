@@ -202,6 +202,11 @@ nav button{font-size:15px;padding:0 4px}
       <option value="0.5">Учитывать частично</option>
       <option value="0">Не учитывать</option>
     </select>
+    <label for="selCL">Лига чемпионов: рейтинги клубов из их лиг</label>
+    <select id="selCL">
+      <option value="1">Использовать</option>
+      <option value="0">Не использовать</option>
+    </select>
     <p class="note">Изменения формы и дома с выездом действуют сразу. Вес свежих матчей пересчитывает модель. Эти настройки подбирает и Лаборатория (вкладка «Лаборатория»).</p>
   </div>
 
@@ -239,6 +244,7 @@ nav button{font-size:15px;padding:0 4px}
     <button class="primary" id="btnLabCheck">Запустить проверку</button>
     <p class="note" id="labProg1"></p>
     <div id="labCheck"></div>
+    <div id="labCL"></div>
   </div>
 
   <div class="card">
@@ -276,7 +282,7 @@ nav button{font-size:15px;padding:0 4px}
   function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 
   /*PURE-START*/
-  var S={half:0,form:0.5,ha:1,bank:1000,K:2,K2:8,K3:3,draw:1,ver:1,auto:true,hist:[],lastTune:null,aliases:{},nomerge:{}};
+  var S={half:0,form:0.5,ha:1,bank:1000,K:2,K2:8,K3:3,draw:1,eloW:0,clPrior:true,clCheck:null,ver:1,auto:true,hist:[],lastTune:null,aliases:{},nomerge:{}};
 
   /* ----- названия команд ----- */
   var STOP={'фк':1,'fc':1,'cf':1,'sc':1,'ac':1,'клуб':1};
@@ -404,7 +410,7 @@ nav button{font-size:15px;padding:0 4px}
     matches.forEach(function(m,k){sw+=w[k];sh+=w[k]*m.gh;sa+=w[k]*m.ga});
     var hAvg=sh/sw,aAvg=sa/sw,att={},def={};
     teams.forEach(function(t){att[t]=1;def[t]=1});
-    var K=(P&&P.K)||2;
+    var K=(P&&P.K)||2,pri=P&&P.prior,Ke=(pri&&pri.K)||K;
     for(var it=0;it<60;it++){
       var na={},nd={};
       teams.forEach(function(t){
@@ -414,7 +420,7 @@ nav button{font-size:15px;padding:0 4px}
           if(m.h===t){gf+=w[k]*m.gh;ex+=w[k]*hAvg*def[m.a];ga+=w[k]*m.ga;ex2+=w[k]*aAvg*att[m.a]}
           else if(m.a===t){gf+=w[k]*m.ga;ex+=w[k]*aAvg*def[m.h];ga+=w[k]*m.gh;ex2+=w[k]*hAvg*att[m.h]}
         }
-        na[t]=(gf+K)/(ex+K);nd[t]=(ga+K)/(ex2+K);
+        na[t]=(gf+Ke*((pri&&pri.att[t])||1))/(ex+Ke);nd[t]=(ga+Ke*((pri&&pri.def[t])||1))/(ex2+Ke);
       });
       var ma=0,md=0;
       teams.forEach(function(t){ma+=na[t];md+=nd[t]});
@@ -466,7 +472,7 @@ nav button{font-size:15px;padding:0 4px}
     var sc2=Math.min(0.9,Math.max(0.1,score));
     var HA=Math.max(20,Math.min(120,400*Math.log(sc2/(1-sc2))/Math.LN10));
     var dr=draws/n,elo={};
-    teams.forEach(function(t){elo[t]=1500});
+    teams.forEach(function(t){elo[t]=(pri&&pri.elo&&pri.elo[t])||1500});
     matches.forEach(function(m){
       var d=elo[m.h]+HA-elo[m.a],We=1/(1+Math.pow(10,-d/400));
       var Sx=m.gh>m.ga?1:(m.gh===m.ga?0.5:0),gd=Math.abs(m.gh-m.ga);
@@ -521,6 +527,53 @@ nav button{font-size:15px;padding:0 4px}
     return {p1:p1,px:px,p2:p2,o25:o25,btts:btts,top:list.slice(0,5),all:list,lh:lh,la:la};
   }
 
+
+  /* ----- рейтинги из национальных лиг для Лиги чемпионов ----- */
+  function domesticFits(domLeagues,beforeDate){
+    var out={};
+    domLeagues.forEach(function(L){
+      var ms=beforeDate?L.matches.filter(function(m){return !m.date||m.date<beforeDate}):L.matches;
+      if(ms.length<20)return;
+      var m=fit(ms,0,{K:S.K||2});
+      m.teams.forEach(function(t){out[t]={att:m.att[t],def:m.def[t],elo:m.elo[t],lg:L.name,n:m.cnt[t]}});
+    });
+    return out;
+  }
+  function buildPrior(clMatches,dom,Kp){
+    var cnt={},sh=0,sa=0,n=clMatches.length;
+    clMatches.forEach(function(m){cnt[m.h]=1;cnt[m.a]=1;sh+=m.gh;sa+=m.ga});
+    var hAvg=n?sh/n:1.5,aAvg=n?sa/n:1.2,acc={};
+    function grp(t){return dom[t]?dom[t].lg:'other'}
+    function A(k){return acc[k]||(acc[k]={gf:0,ef:0,ga:0,ea:0})}
+    clMatches.forEach(function(m){
+      var pah=dom[m.h]?dom[m.h].att:1,pdh=dom[m.h]?dom[m.h].def:1,paa=dom[m.a]?dom[m.a].att:1,pda=dom[m.a]?dom[m.a].def:1;
+      var eh=hAvg*pah*pda,ea=aAvg*paa*pdh,x=A(grp(m.h)),y=A(grp(m.a));
+      x.gf+=m.gh;x.ef+=eh;x.ga+=m.ga;x.ea+=ea;
+      y.gf+=m.ga;y.ef+=ea;y.ga+=m.gh;y.ea+=eh;
+    });
+    var Kq=8,q={},r={};
+    Object.keys(acc).forEach(function(k){q[k]=(acc[k].gf+Kq)/(acc[k].ef+Kq);r[k]=(acc[k].ga+Kq)/(acc[k].ea+Kq)});
+    var pri={att:{},def:{},elo:{},K:Kp||4};
+    Object.keys(cnt).forEach(function(t){
+      var gk=grp(t);
+      pri.att[t]=(dom[t]?dom[t].att:1)*(q[gk]||1);
+      pri.def[t]=(dom[t]?dom[t].def:1)*(r[gk]||1);
+      if(dom[t])pri.elo[t]=1500+0.5*(dom[t].elo-1500);
+    });
+    return pri;
+  }
+  function labOne(m,h,a,c){
+    var known=m.att[h]!==undefined&&m.att[a]!==undefined;
+    var lam=known?lambdas(m,h,a,{ha:c.ha,form:c.form}):{lh:m.hAvg,la:m.aAvg};
+    var r=predict(lam.lh,lam.la),q=boostDraw(r.p1,r.px,r.p2,c.draw);
+    if(known&&c.eloW>0){var e=eloProbs(m,h,a),w=c.eloW;q=[(1-w)*q[0]+w*e.p1,(1-w)*q[1]+w*e.px,(1-w)*q[2]+w*e.p2]}
+    return q;
+  }
+  function mixElo(r,e,w){
+    if(!w||!e)return r;
+    return Object.assign({},r,{p1:(1-w)*r.p1+w*e.p1,px:(1-w)*r.px+w*e.px,p2:(1-w)*r.p2+w*e.p2});
+  }
+
   /* ----- лаборатория: проверка на истории и подбор настроек ----- */
   function boostDraw(p1,px,p2,b){
     if(!b||b===1)return [p1,px,p2];
@@ -555,14 +608,14 @@ nav button{font-size:15px;padding:0 4px}
   function labGrid(champ){
     var cfgs=[],id=0,seen={};
     function add(c,isChamp){
-      var key=[c.K,c.half,c.ha,c.form,c.draw].join('|');
+      var key=[c.K,c.half,c.ha,c.form,c.draw,c.eloW].join('|');
       if(seen[key])return;
       seen[key]=1;c.id=id++;c.champ=!!isChamp;cfgs.push(c);
     }
-    add({K:champ.K,half:champ.half,ha:champ.ha,form:champ.form,draw:champ.draw},true);
-    [1,2,4].forEach(function(K){[0,100,30].forEach(function(h){[0,0.5,1].forEach(function(ha){[0,0.5,1].forEach(function(f){[1,1.15,1.3].forEach(function(d){
-      add({K:K,half:h,ha:ha,form:f,draw:d},false);
-    })})})})});
+    add({K:champ.K,half:champ.half,ha:champ.ha,form:champ.form,draw:champ.draw,eloW:champ.eloW||0},true);
+    [1,2,4].forEach(function(K){[0,100,30].forEach(function(h){[0,0.5,1].forEach(function(ha){[0,0.5,1].forEach(function(f){[1,1.15,1.3].forEach(function(d){[0,0.3,0.6].forEach(function(w){
+      add({K:K,half:h,ha:ha,form:f,draw:d,eloW:w},false);
+    })})})})})});
     return cfgs;
   }
   function labGroups(cfgs){
@@ -585,10 +638,15 @@ nav button{font-size:15px;padding:0 4px}
       for(j=0;j<test.length;j++){
         var g=test[j],o=g.gh>g.ga?0:(g.gh===g.ga?1:2),hf=(g.date||'')>=cutoff?1:0;
         var known=m.att[g.h]!==undefined&&m.att[g.a]!==undefined;
+        var cache={},eq=known?eloProbs(m,g.h,g.a):null;
         for(var ci=0;ci<grp.cfgs.length;ci++){
-          var c=grp.cfgs[ci];
-          var lam=known?lambdas(m,g.h,g.a,{ha:c.ha,form:c.form}):{lh:m.hAvg,la:m.aAvg};
-          var r=predict(lam.lh,lam.la),q=boostDraw(r.p1,r.px,r.p2,c.draw);
+          var c=grp.cfgs[ci],key=c.ha+'|'+c.form,r=cache[key];
+          if(!r){
+            var lam=known?lambdas(m,g.h,g.a,{ha:c.ha,form:c.form}):{lh:m.hAvg,la:m.aAvg};
+            r=cache[key]=predict(lam.lh,lam.la);
+          }
+          var q=boostDraw(r.p1,r.px,r.p2,c.draw);
+          if(eq&&c.eloW>0){var w=c.eloW;q=[(1-w)*q[0]+w*eq.p1,(1-w)*q[1]+w*eq.px,(1-w)*q[2]+w*eq.p2]}
           addAcc(res.cfg[c.id],hf,q,o);
           if(c.champ){
             var al=res.league[L.name]||(res.league[L.name]=newAcc());
@@ -598,7 +656,7 @@ nav button{font-size:15px;padding:0 4px}
           }
         }
         if(grp.champ){
-          if(known){var eq=eloProbs(m,g.h,g.a);addAcc(res.elo,hf,[eq.p1,eq.px,eq.p2],o)}
+          if(eq)addAcc(res.elo,hf,[eq.p1,eq.px,eq.p2],o);
           var b0=predict(m.hAvg,m.aAvg);addAcc(res.base,hf,[b0.p1,b0.px,b0.p2],o);
         }
       }
@@ -696,6 +754,7 @@ nav button{font-size:15px;padding:0 4px}
     $('#selHalf').value=String(S.half);
     $('#selForm').value=String(S.form);
     $('#selHA').value=String(haWeight());
+    $('#selCL').value=S.clPrior===false?'0':'1';
   }
   function setActive(id){
     syncText();
@@ -731,6 +790,7 @@ nav button{font-size:15px;padding:0 4px}
   $('#selHalf').addEventListener('change',function(){S.half=parseInt(this.value,10)||0;persistS();train()});
   $('#selForm').addEventListener('change',function(){S.form=parseFloat(this.value)||0;persistS()});
   $('#selHA').addEventListener('change',function(){S.ha=parseFloat(this.value)||0;persistS()});
+  $('#selCL').addEventListener('change',function(){S.clPrior=this.value==='1';persistS();train()});
 
   /* ---------- обучение ---------- */
   function train(){
@@ -742,10 +802,21 @@ nav button{font-size:15px;padding:0 4px}
       model=null;
       info='Найдено матчей: '+ms.length+'. Для модели нужно хотя бы 10, лучше 100 и больше.';
     } else {
-      model=fit(ms,S.half,{K:S.K,K2:S.K2,K3:S.K3});
+      var P0={K:S.K,K2:S.K2,K3:S.K3},dom=null;
+      if(d.id==='auto-CL'&&S.clPrior!==false){
+        dom=domesticFits(domLeagues(),null);
+        if(Object.keys(dom).length)P0.prior=buildPrior(ms,dom,4);
+      }
+      model=fit(ms,S.half,P0);
+      if(P0.prior){
+        model.effN={};
+        model.teams.forEach(function(t){model.effN[t]=(model.cnt[t]||0)+0.5*(dom[t]?dom[t].n:0)});
+        model.prior=true;
+      }
       info='Готово: матчей — '+model.n+', команд — '+model.teams.length+'. Средние голы за матч: хозяева '+model.hAvg.toFixed(2)+', гости '+model.aAvg.toFixed(2)+'.';
     }
     if(skipped)info+=' Пропущено по дате: '+skipped+'.';
+    if(model&&model.prior)info+=' Для клубов использованы также рейтинги из их национальных лиг.';
     if(d.auto&&autoUpdated)info+=' Набор загружается автоматически, обновлён '+autoUpdated+'. Ручные правки в нём будут перезаписаны.';
     if(p.dups)info+=' Убрано дублей: '+p.dups+'.';
     if(p.bad.length)info+=' Не распознано строк: '+p.bad.length+'.';
@@ -896,7 +967,13 @@ nav button{font-size:15px;padding:0 4px}
   function fair(p){return p>0?(1/p).toFixed(2):'—'}
   function money(x){return (Math.round(x*100)/100).toString()}
 
-  function render(r0,hName,aName){
+  function relInfo(h,a){
+    if(!model||!model.cnt)return '';
+    var eff=model.effN||model.cnt,nh=eff[h]||0,na=eff[a]||0,mn=Math.min(nh,na);
+    var lv=mn<6?['низкая','bad']:(mn<12?['средняя','']:['хорошая','ok']);
+    return '<p class="note '+lv[1]+'" style="text-align:center">Надёжность оценки: <b>'+lv[0]+'</b>. Матчей в данных: '+Math.round(nh)+' и '+Math.round(na)+(mn<6?'. Доверять осторожно.':'.')+'</p>';
+  }
+  function render(r0,hName,aName,pure){
     var r=r0,cal=calInfo();
     if(cal.on){r=Object.assign({},r0,applyCal(r0,cal))}
     var kmap=(mode==='league')?dsMatches(DS.active):null;
@@ -923,17 +1000,19 @@ nav button{font-size:15px;padding:0 4px}
       if(S.ha)used.push('дом и выезд');
       if(S.form>0)used.push('форма последних 5 матчей');
       h+='<p class="note" style="text-align:center">Учтено: общая сила команд'+(used.length?', '+used.join(', '):'')+'.</p>';
+      h+=relInfo(hName,aName);
     }
     h+='</div>';
 
     /* второе мнение: Эло */
     if(mode==='league'&&model&&model.elo[hName]!==undefined&&model.elo[aName]!==undefined){
       var e=eloProbs(model,hName,aName);
-      var diff=Math.max(Math.abs(e.p1-r.p1),Math.abs(e.px-r.px),Math.abs(e.p2-r.p2));
+      var rp=pure||r;
+      var diff=Math.max(Math.abs(e.p1-rp.p1),Math.abs(e.px-rp.px),Math.abs(e.p2-rp.p2));
       h+='<div class="card"><h2>Второе мнение: рейтинг Эло</h2>'
         +'<div class="bar thin"><i style="width:'+(e.p1*100)+'%;background:var(--home)"></i><i style="width:'+(e.px*100)+'%;background:var(--draw)"></i><i style="width:'+(e.p2*100)+'%;background:var(--away)"></i></div>'
         +'<div class="pct sm"><div><b>'+pc(e.p1)+'</b><span>П1</span></div><div><b>'+pc(e.px)+'</b><span>Х</span></div><div><b>'+pc(e.p2)+'</b><span>П2</span></div></div>'
-        +'<p class="note">Рейтинги: '+Math.round(e.rh)+' и '+Math.round(e.ra)+'.</p>'
+        +'<p class="note">Рейтинги: '+Math.round(e.rh)+' и '+Math.round(e.ra)+'.'+(S.eloW>0?' В итоговый прогноз Эло входит с весом '+Math.round(S.eloW*100)+'%.':'')+'</p>'
         +(diff>=0.10
           ?'<div class="warn"><b>Модели расходятся на '+Math.round(diff*100)+' п.п.</b> Оценка ненадёжна, матч лучше пропустить.</div>'
           :'<div class="warn">Модели согласны: разница не больше '+Math.max(1,Math.round(diff*100))+' п.п.</div>')
@@ -1028,7 +1107,9 @@ nav button{font-size:15px;padding:0 4px}
     var h=$('#selHome').value,a=$('#selAway').value;
     if(h===a){$('#result').innerHTML='<div class="card empty">Выберите две разные команды.</div>';return}
     var L=lambdas(model,h,a);
-    render(adjustDraw(predict(L.lh,L.la)),h,a);
+    var pure=adjustDraw(predict(L.lh,L.la));
+    var eq0=(S.eloW>0&&model.elo[h]!==undefined&&model.elo[a]!==undefined)?eloProbs(model,h,a):null;
+    render(mixElo(pure,eq0,S.eloW),h,a,pure);
   });
 
   /* ---------- графики ---------- */
@@ -1330,7 +1411,7 @@ nav button{font-size:15px;padding:0 4px}
       S.form=s.form!==undefined?s.form:S.form;
       S.ha=s.ha!==undefined?(s.ha===true?1:(s.ha===false?0:s.ha)):S.ha;
       S.bank=s.bank!==undefined?s.bank:S.bank;
-      ['K','K2','K3','draw','ver','auto','hist','lastTune'].forEach(function(k){if(s[k]!==undefined)S[k]=s[k]});
+      ['K','K2','K3','draw','eloW','clPrior','clCheck','ver','auto','hist','lastTune'].forEach(function(k){if(s[k]!==undefined)S[k]=s[k]});
       Object.keys(s.aliases||{}).forEach(function(k){S.aliases[k]=s.aliases[k]});
       Object.keys(s.nomerge||{}).forEach(function(k){S.nomerge[k]=s.nomerge[k]});
     }
@@ -1357,7 +1438,7 @@ nav button{font-size:15px;padding:0 4px}
   function labLeagues(){
     var out=[];
     DS.list.forEach(function(d){
-      if(!d.auto)return;
+      if(!d.auto||d.id==='auto-CL')return;
       var ms=parseAll(d.text||'').matches;
       if(ms.length>=40&&ms.every(function(m){return m.date}))out.push({name:d.name.replace(' (авто)',''),matches:ms});
     });
@@ -1365,10 +1446,19 @@ nav button{font-size:15px;padding:0 4px}
   }
   function autoCount(){
     var n=0;
-    DS.list.forEach(function(d){if(d.auto)n+=parseAll(d.text||'').matches.length});
+    DS.list.forEach(function(d){if(d.auto&&d.id!=='auto-CL')n+=parseAll(d.text||'').matches.length});
     return n;
   }
-  function curCfg(){return {K:S.K||2,half:S.half||0,ha:haWeight(),form:S.form,draw:S.draw||1}}
+  function curCfg(){return {K:S.K||2,half:S.half||0,ha:haWeight(),form:S.form,draw:S.draw||1,eloW:S.eloW||0}}
+  function domLeagues(){
+    var out=[];
+    DS.list.forEach(function(x){
+      if(!x.auto||x.id==='auto-CL')return;
+      var ms=parseAll(x.text||'').matches;
+      if(ms.length>=20)out.push({name:x.name,matches:ms});
+    });
+    return out;
+  }
   async function labRun(grid,onProg){
     var leagues=labLeagues(),champ=curCfg();
     var cfgs=grid?labGrid(champ):[Object.assign({id:0,champ:true},champ)];
@@ -1387,7 +1477,7 @@ nav button{font-size:15px;padding:0 4px}
   }
   function cfgText(c){
     var ha={'0':'нет','0.5':'частично','1':'полностью'}[String(c.ha)],fm={'0':'нет','0.5':'умеренно','1':'сильно'}[String(c.form)];
-    return 'сжатие к среднему '+c.K+'; вес свежих: '+(c.half?'период '+c.half+' матчей':'все матчи равны')+'; дом и выезд: '+ha+'; форма: '+fm+'; ничьи ×'+(+c.draw).toFixed(2);
+    return 'сжатие к среднему '+c.K+'; вес свежих: '+(c.half?'период '+c.half+' матчей':'все матчи равны')+'; дом и выезд: '+ha+'; форма: '+fm+'; ничьи ×'+(+c.draw).toFixed(2)+'; Эло в смеси '+Math.round((c.eloW||0)*100)+'%';
   }
   function cfgDiff(f,t){
     var out=[];
@@ -1396,6 +1486,7 @@ nav button{font-size:15px;padding:0 4px}
     if(f.ha!==t.ha)out.push('дом и выезд '+f.ha+' → '+t.ha);
     if(f.form!==t.form)out.push('форма '+f.form+' → '+t.form);
     if(f.draw!==t.draw)out.push('ничьи ×'+(+f.draw).toFixed(2)+' → ×'+(+t.draw).toFixed(2));
+    if((f.eloW||0)!==(t.eloW||0))out.push('Эло '+Math.round((f.eloW||0)*100)+'% → '+Math.round((t.eloW||0)*100)+'%');
     return out.length?out.join(', '):'без изменений';
   }
   function dayStr(ts){return new Date(ts).toLocaleDateString('ru-RU',{day:'numeric',month:'long'})}
@@ -1407,6 +1498,7 @@ nav button{font-size:15px;padding:0 4px}
       +'<div class="kv"><span>Версия настроек</span><b>v'+(S.ver||1)+'</b></div>'
       +'<div class="kv"><span>Текущие настройки</span><b style="max-width:62%">'+cfgText(curCfg())+'</b></div>'
       +'<div class="kv"><span>Данные для проверки</span><b>'+tot+' матчей, '+lg.length+' лиг</b></div>'
+      +'<div class="kv"><span>ЛЧ: рейтинги из лиг</span><b>'+(S.clPrior===false?'выключены':'включены')+(S.clCheck?' (проверено на '+S.clCheck.n+' матчах)':'')+'</b></div>'
       +'<div class="kv"><span>Последний подбор</span><b>'+(S.lastTune?dayStr(S.lastTune.ts):'ещё не было')+'</b></div>'
       +'<button class="ghost" id="btnAutoDev" style="width:100%;margin-top:10px">Автоматическое развитие: '+(S.auto===false?'выключено':'включено')+' (нажмите, чтобы переключить)</button>';
     $('#labState').innerHTML=h;
@@ -1464,9 +1556,9 @@ nav button{font-size:15px;padding:0 4px}
 
   function applyCfg(c,gain,n,auto){
     var from=curCfg();
-    S.K=c.K;S.half=c.half;S.ha=c.ha;S.form=c.form;S.draw=c.draw;S.ver=(S.ver||1)+1;
+    S.K=c.K;S.half=c.half;S.ha=c.ha;S.form=c.form;S.draw=c.draw;S.eloW=c.eloW||0;S.ver=(S.ver||1)+1;
     S.hist=S.hist||[];
-    S.hist.push({ts:Date.now(),ver:S.ver,from:from,to:{K:c.K,half:c.half,ha:c.ha,form:c.form,draw:c.draw},gain:gain,n:n,auto:!!auto});
+    S.hist.push({ts:Date.now(),ver:S.ver,from:from,to:{K:c.K,half:c.half,ha:c.ha,form:c.form,draw:c.draw,eloW:c.eloW||0},gain:gain,n:n,auto:!!auto});
     if(S.hist.length>20)S.hist.shift();
     persistS();loadUi();train();renderLab();
   }
@@ -1474,10 +1566,57 @@ nav button{font-size:15px;padding:0 4px}
     var h=(S.hist||[])[(S.hist||[]).length-1];
     if(!h||h.undo)return;
     var cur=curCfg(),f=h.from;
-    S.K=f.K;S.half=f.half;S.ha=f.ha;S.form=f.form;S.draw=f.draw;S.ver=(S.ver||1)+1;S.auto=false;
+    S.K=f.K;S.half=f.half;S.ha=f.ha;S.form=f.form;S.draw=f.draw;S.eloW=f.eloW||0;S.ver=(S.ver||1)+1;S.auto=false;
     S.hist.push({ts:Date.now(),ver:S.ver,from:cur,to:f,gain:0,n:0,undo:true});
     if(S.hist.length>20)S.hist.shift();
     persistS();loadUi();train();renderLab();
+  }
+
+
+  async function labCL(){
+    var d=DS.list.filter(function(x){return x.id==='auto-CL'})[0];
+    if(!d)return null;
+    var ms=parseAll(d.text||'').matches;
+    if(!ms.length||!ms.every(function(m){return m.date}))return null;
+    var dom=domLeagues(),T=Object.keys(ms.reduce(function(a,m){a[m.h]=1;a[m.a]=1;return a},{})).length;
+    var C=Math.max(6,Math.round(T/2)),start=2*C,aw=newAcc(),ao=newAcc(),c=curCfg();
+    if(ms.length<start+6)return {n:0};
+    for(var i=start;i<ms.length;i+=C){
+      var train=ms.slice(0,i),test=ms.slice(i,i+C);
+      var df=domesticFits(dom,test[0].date),pri=Object.keys(df).length?buildPrior(train,df,4):null;
+      var mw=fit(train,S.half,{K:S.K,prior:pri}),mo=fit(train,S.half,{K:S.K});
+      test.forEach(function(g){
+        var o=g.gh>g.ga?0:(g.gh===g.ga?1:2);
+        addAcc(aw,0,labOne(mw,g.h,g.a,c),o);
+        addAcc(ao,0,labOne(mo,g.h,g.a,c),o);
+      });
+      await tick();
+    }
+    return {n:aw.n[0],w:accSum(aw),o:accSum(ao)};
+  }
+  function renderCL(cl){
+    var el=$('#labCL');
+    if(!cl||!cl.n||cl.n<18){
+      el.innerHTML='<h3>Лига чемпионов</h3><p class="note">Проверка рейтингов из лиг для ЛЧ появится, когда накопится хотя бы 18 сыгранных матчей после первых двух туров (сейчас '+(cl&&cl.n?cl.n:0)+'). Пока эти рейтинги включены без проверки.</p>';
+      return;
+    }
+    var g=cl.o.ll-cl.w.ll;
+    el.innerHTML='<h3>Лига чемпионов</h3><table class="tbl"><tr><th>Вариант</th><th>Лог-потери</th><th>Исход</th></tr>'
+      +'<tr><td>С рейтингами клубов из их лиг</td><td>'+cl.w.ll.toFixed(3)+'</td><td>'+pc(cl.w.hit)+'</td></tr>'
+      +'<tr><td>Только матчи ЛЧ</td><td>'+cl.o.ll.toFixed(3)+'</td><td>'+pc(cl.o.hit)+'</td></tr></table>'
+      +'<div class="warn">'+(g>=0.005?'Рейтинги из лиг помогают: лучше на '+g.toFixed(3)+' (на '+cl.n+' матчах).':(g<=-0.005?'Рейтинги из лиг пока вредят: хуже на '+(-g).toFixed(3)+' (на '+cl.n+' матчах). Приложение отключит их само, если автоматическое развитие включено.':'Разница незначительна ('+g.toFixed(3)+' на '+cl.n+' матчах), оставляем как есть.'))+'</div>';
+  }
+  async function maybeAutoCL(){
+    if(S.auto===false||labBusy)return;
+    var cc=S.clCheck;
+    if(cc&&Date.now()-cc.ts<3*86400000)return;
+    var cl=await labCL();
+    if(!cl||!cl.n||cl.n<36)return;
+    var g=cl.o.ll-cl.w.ll,prev=S.clPrior!==false;
+    if(g>=0.005)S.clPrior=true;else if(g<=-0.005)S.clPrior=false;
+    S.clCheck={ts:Date.now(),n:cl.n,gain:g};
+    persistS();
+    if((S.clPrior!==false)!==prev){loadUi();train()}
   }
 
   async function runCheckUi(){
@@ -1487,6 +1626,9 @@ nav button{font-size:15px;padding:0 4px}
       var out=await labRun(false,function(d,t){$('#labProg1').textContent='Проверка: '+d+' из '+t});
       $('#labProg1').textContent='';
       renderCheck(out);
+      $('#labProg1').textContent='Проверяю Лигу чемпионов…';
+      renderCL(await labCL());
+      $('#labProg1').textContent='';
     }finally{labBusy=false;$('#btnLabCheck').disabled=false}
   }
   async function runTuneUi(auto){
@@ -1562,6 +1704,7 @@ nav button{font-size:15px;padding:0 4px}
       }
       if(changed||autoUpdated){persistDs();loadUi();train()}
       setTimeout(maybeAutoTune,2500);
+      setTimeout(maybeAutoCL,6000);
     }).catch(function(){});
   }
   loadAuto();
