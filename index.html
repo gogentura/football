@@ -212,7 +212,7 @@ nav button{font-size:15px;padding:0 4px}
 
   <div class="card" id="ratingsCard" hidden>
     <h2>Силы команд</h2>
-    <p class="note">Атака выше 1 — забивают чаще среднего. Защита ниже 1 — пропускают реже. Форма: В — победа, Н — ничья, П — поражение, справа последний матч.</p>
+    <p class="note">Атака выше 1 — забивают чаще среднего. Защита ниже 1 — пропускают реже. Форма: В — победа, Н — ничья, П — поражение, «?» — матч сыгран, но счёт ещё не получен. Справа последний матч.</p>
     <div style="overflow-x:auto"><table class="tbl" id="ratings"></table></div>
   </div>
 
@@ -355,6 +355,7 @@ nav button{font-size:15px;padding:0 4px}
       if(sc){h=f[0];a=f[2];gh=+sc[1];ga=+sc[2]}
       else if(f.length>=4&&/^\d{1,2}$/.test(f[1])&&/^\d{1,2}$/.test(f[2])){h=f[0];gh=+f[1];ga=+f[2];a=f[3]}
       else if(f.length>=4&&/^\d{1,2}$/.test(f[2])&&/^\d{1,2}$/.test(f[3])){h=f[0];a=f[1];gh=+f[2];ga=+f[3]}
+      else if(f.length>=4&&f[2]==='?'&&f[3]==='?'){h=f[0];a=f[1];gh=null;ga=null}
     }
     if(h===undefined){
       var s=f.join(' ').replace(/\s+/g,' ').trim();
@@ -371,12 +372,14 @@ nav button{font-size:15px;padding:0 4px}
     return {h:h,a:a,gh:gh,ga:ga,date:date};
   }
   function parseAll(text){
-    var res=makeResolver(),out=[],bad=[];
+    var res=makeResolver(),out=[],bad=[],pend=[];
     text.split(/\r?\n/).forEach(function(line){
       if(!line.trim())return;
       var p=parseLine(line);
       if(!p||p.h.toLowerCase()===p.a.toLowerCase()){bad.push(line.trim());return}
-      p.h=res(p.h);p.a=res(p.a);p.i=out.length;
+      p.h=res(p.h);p.a=res(p.a);
+      if(p.gh===null){p.i=pend.length;pend.push(p);return}
+      p.i=out.length;
       out.push(p);
     });
     var dups=0;
@@ -398,7 +401,16 @@ nav button{font-size:15px;padding:0 4px}
     }
     var counts={};
     out.forEach(function(m){counts[m.h]=(counts[m.h]||0)+1;counts[m.a]=(counts[m.a]||0)+1});
-    return {matches:out,bad:bad,teams:Object.keys(counts),counts:counts,dups:dups};
+    var kk={};
+    out.forEach(function(m){kk[m.date+'|'+m.h+'|'+m.a]=1});
+    pend=pend.filter(function(m){return !(m.date&&kk[m.date+'|'+m.h+'|'+m.a])});
+    var all=out.concat(pend);
+    if(all.length&&all.every(function(m){return m.date})){
+      all=all.map(function(m,ix){return {m:m,ix:ix}}).sort(function(x,y){
+        return x.m.date<y.m.date?-1:(x.m.date>y.m.date?1:(((x.m.gh===null)-(y.m.gh===null))||x.ix-y.ix));
+      }).map(function(z){return z.m});
+    }
+    return {matches:out,pending:pend,all:all,bad:bad,teams:Object.keys(counts),counts:counts,dups:dups};
   }
 
   /* ----- модель ----- */
@@ -447,8 +459,22 @@ nav button{font-size:15px;padding:0 4px}
     /* форма: последние 5 матчей каждой команды */
     var K3=(P&&P.K3)||3,fg={},fe={},fga={},fex={},fc={},fr={},fa={},fd={},fstr={};
     teams.forEach(function(t){fg[t]=0;fe[t]=0;fga[t]=0;fex[t]=0;fc[t]=0;fr[t]=[]});
-    for(i=n-1;i>=0;i--){
-      var mm=matches[i],t1=mm.h,t2=mm.a;
+    var seq=matches;
+    if(P&&P.pending&&P.pending.length){
+      seq=matches.concat(P.pending);
+      if(seq.every(function(m){return m.date})){
+        seq=seq.map(function(m,ix){return {m:m,ix:ix}}).sort(function(x,y){
+          return x.m.date<y.m.date?-1:(x.m.date>y.m.date?1:(((x.m.gh===null)-(y.m.gh===null))||x.ix-y.ix));
+        }).map(function(z){return z.m});
+      }
+    }
+    for(i=seq.length-1;i>=0;i--){
+      var mm=seq[i],t1=mm.h,t2=mm.a;
+      if(mm.gh===null){
+        if(fc[t1]!==undefined&&fc[t1]<5){fc[t1]++;fr[t1].push('?')}
+        if(fc[t2]!==undefined&&fc[t2]<5){fc[t2]++;fr[t2].push('?')}
+        continue;
+      }
       if(fc[t1]<5){
         fc[t1]++;fg[t1]+=mm.gh;fe[t1]+=hAvg*att[t1]*def[t2];fga[t1]+=mm.ga;fex[t1]+=aAvg*att[t2]*def[t1];
         fr[t1].push(mm.gh>mm.ga?'В':(mm.gh===mm.ga?'Н':'П'));
@@ -797,12 +823,13 @@ nav button{font-size:15px;padding:0 4px}
     syncText();
     var d=activeDs(),p=parseAll(d.text||'');
     var ms=p.matches.filter(function(m){return !d.from||!m.date||m.date>=d.from});
+    var pend=(p.pending||[]).filter(function(m){return !d.from||!m.date||m.date>=d.from});
     var skipped=p.matches.length-ms.length,info;
     if(ms.length<10){
       model=null;
       info='Найдено матчей: '+ms.length+'. Для модели нужно хотя бы 10, лучше 100 и больше.';
     } else {
-      var P0={K:S.K,K2:S.K2,K3:S.K3},dom=null;
+      var P0={K:S.K,K2:S.K2,K3:S.K3,pending:pend},dom=null;
       if(d.id==='auto-CL'&&S.clPrior!==false){
         dom=domesticFits(domLeagues(),null);
         if(Object.keys(dom).length)P0.prior=buildPrior(ms,dom,4);
@@ -816,6 +843,7 @@ nav button{font-size:15px;padding:0 4px}
       info='Готово: матчей — '+model.n+', команд — '+model.teams.length+'. Средние голы за матч: хозяева '+model.hAvg.toFixed(2)+', гости '+model.aAvg.toFixed(2)+'.';
     }
     if(skipped)info+=' Пропущено по дате: '+skipped+'.';
+    if(pend.length)info+=' Матчей без счёта (ждём данные): '+pend.length+'. В форме они показаны как «?» и в расчёты не входят.';
     if(model&&model.prior)info+=' Для клубов использованы также рейтинги из их национальных лиг.';
     if(d.auto&&autoUpdated)info+=' Набор загружается автоматически, обновлён '+autoUpdated+'. Ручные правки в нём будут перезаписаны.';
     if(p.dups)info+=' Убрано дублей: '+p.dups+'.';
@@ -921,7 +949,7 @@ nav button{font-size:15px;padding:0 4px}
     var len=(d.text||'').length,c=dsCache[id];
     if(c&&c.len===len)return c.map;
     var map={};
-    parseAll(d.text||'').matches.forEach(function(m){var k=m.h+'|'+m.a;(map[k]=map[k]||[]).push(m)});
+    parseAll(d.text||'').all.forEach(function(m){var k=m.h+'|'+m.a;(map[k]=map[k]||[]).push(m)});
     dsCache[id]={len:len,map:map};
     return map;
   }
@@ -1690,7 +1718,7 @@ nav button{font-size:15px;padding:0 4px}
       var changed=false,first=null;
       Object.keys(data.leagues).forEach(function(code){
         var lg=data.leagues[code],id='auto-'+code;
-        var text=lg.matches.map(function(m){return m[0]+'; '+m[1]+'; '+m[2]+'; '+m[3]+'; '+m[4]}).join('\n');
+        var text=lg.matches.map(function(m){var a3=(m[3]===null||m[3]===undefined)?'?':m[3],a4=(m[4]===null||m[4]===undefined)?'?':m[4];return m[0]+'; '+m[1]+'; '+m[2]+'; '+a3+'; '+a4}).join('\n');
         var ds=DS.list.filter(function(d){return d.id===id})[0];
         if(!ds){DS.list.push({id:id,name:lg.name+' (авто)',text:text,from:'',auto:true});changed=true}
         else if(ds.text!==text){ds.text=text;changed=true}
