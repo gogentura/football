@@ -1,5 +1,10 @@
 # Скачивает результаты сыгранных матчей с football-data.org и сохраняет в results.json.
 # Ключ берётся из переменной окружения FOOTBALL_DATA_TOKEN (её задаёт GitHub Actions).
+#
+# Строка матча: [дата, хозяева, гости, голы_хозяев, голы_гостей].
+# Если API пометил матч как FINISHED, но счёта ещё нет, строка сохраняется с null вместо голов.
+# Такой матч не теряет своё место в истории. Когда счёт появится, строка обновится на месте.
+# Известный счёт пустым значением никогда не затирается.
 import json
 import os
 import sys
@@ -29,6 +34,16 @@ def get(code):
         return json.load(r)
 
 
+def pick_goals(score):
+    """Голы основного времени (для матчей с доп. временем и пенальти берём счёт 90 минут)."""
+    sc = score or {}
+    ft = sc.get("regularTime") or sc.get("fullTime") or {}
+    gh, ga = ft.get("home"), ft.get("away")
+    if isinstance(gh, int) and isinstance(ga, int):
+        return gh, ga
+    return None, None
+
+
 def main():
     if not TOKEN:
         print("Не задан ключ FOOTBALL_DATA_TOKEN")
@@ -51,24 +66,34 @@ def main():
             continue
         league = data["leagues"].setdefault(code, {"name": name, "matches": []})
         league["name"] = name
-        seen = {(m[0], m[1], m[2]) for m in league["matches"]}
-        added = 0
+        index = {(m[0], m[1], m[2]): m for m in league["matches"]}
+        added = updated = pending = 0
         for m in js.get("matches", []):
-            sc = m.get("score") or {}
-            # Для матчей с дополнительным временем берём счёт основного времени (90 минут)
-            ft = sc.get("regularTime") or sc.get("fullTime") or {}
-            gh, ga = ft.get("home"), ft.get("away")
-            if gh is None or ga is None:
-                continue
+            gh, ga = pick_goals(m.get("score"))
             row = [m["utcDate"][:10], m["homeTeam"]["name"], m["awayTeam"]["name"], gh, ga]
             key = (row[0], row[1], row[2])
-            if key in seen:
-                continue
-            seen.add(key)
-            league["matches"].append(row)
-            added += 1
+            if gh is None:
+                pending += 1
+                # Диагностика: почему у FINISHED-матча нет счёта. Смотрите эти строки в журнале запуска.
+                print(code, "FINISHED без счёта:", row[1], "-", row[2], row[0],
+                      "| id", m.get("id"), "| lastUpdated", m.get("lastUpdated"),
+                      "| duration", (m.get("score") or {}).get("duration"),
+                      "| winner", (m.get("score") or {}).get("winner"),
+                      "| score", json.dumps(m.get("score"), ensure_ascii=False))
+            old = index.get(key)
+            if old is None:
+                league["matches"].append(row)
+                index[key] = row
+                added += 1
+            elif old[3] != gh or old[4] != ga:
+                if gh is None:
+                    continue  # известный счёт пустым значением не затираем
+                old[3], old[4] = gh, ga
+                updated += 1
         league["matches"].sort(key=lambda r: r[0])
-        print(code, "новых матчей:", added, "всего:", len(league["matches"]))
+        unknown = sum(1 for r in league["matches"] if r[3] is None)
+        print(code, "новых:", added, "обновлено:", updated, "без счёта сейчас:", unknown,
+              "всего:", len(league["matches"]))
         ok += 1
 
     if ok == 0:
