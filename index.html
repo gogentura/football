@@ -74,7 +74,7 @@ button{font:inherit;font-weight:800;min-height:50px;border:0;border-radius:12px;
 .tbl th,.tbl td{padding:7px 4px;text-align:right;border-top:1px solid var(--line);white-space:nowrap}
 .tbl th:first-child,.tbl td:first-child{text-align:left;white-space:normal}
 .tbl th{color:var(--mute);font-weight:600;border-top:0}
-nav{position:fixed;left:0;right:0;bottom:0;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav{position:fixed;left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(5,1fr);background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
 nav button{border-radius:0;background:transparent;color:var(--mute);min-height:62px;font-weight:700}
 nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
 .empty{text-align:center;color:var(--mute);padding:22px 8px}
@@ -91,9 +91,20 @@ nav button.on{color:var(--pitch);box-shadow:inset 0 3px 0 var(--card-y)}
 .warn{background:var(--bg);border-left:4px solid var(--card-y);border-radius:8px;padding:8px 10px;font-size:14px;margin-top:10px}
 .sug{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
 .chart svg{display:block;width:100%;height:auto}
-nav button{font-size:15px;padding:0 4px}
+nav button{font-size:12.5px;padding:0 2px;letter-spacing:-.2px}
 .cfg{font-size:14px;color:var(--mute);margin:2px 0 0}
 .rec{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:10px}
+.seg.three{grid-template-columns:1fr 1fr 1fr}
+.tt td,.tt th{padding:7px 3px;font-size:14px}
+.tt th:first-child,.tt td:first-child{text-align:center;width:30px;white-space:nowrap}
+.tt td.tn{text-align:left;max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tt .fm{display:block;font-size:11px;letter-spacing:1.5px;margin-top:1px}
+.tt td.z1{box-shadow:inset 4px 0 0 var(--ok)}
+.tt td.z2{box-shadow:inset 4px 0 0 var(--card-y)}
+.tt td.z3{box-shadow:inset 4px 0 0 var(--bad)}
+.tt td.pt{font-weight:800}
+.lgd{font-size:13px;color:var(--mute);margin:8px 0 0}
+.lgd i{display:inline-block;width:10px;height:10px;margin:0 4px 0 10px;vertical-align:middle}
 </style>
 </head>
 <body>
@@ -264,12 +275,29 @@ nav button{font-size:15px;padding:0 4px}
   </div>
 </section>
 
+<section id="tab-tables" class="tab">
+  <div class="card">
+    <h2>Турнирные таблицы</h2>
+    <label for="selTbl">Турнир</label>
+    <select id="selTbl"></select>
+    <div class="seg three" id="tblMode" style="margin-top:10px">
+      <button data-m="all" class="on">Все</button>
+      <button data-m="home">Дома</button>
+      <button data-m="away">В гостях</button>
+    </div>
+    <p class="note" id="tblInfo"></p>
+    <div style="overflow-x:auto"><table class="tbl tt" id="tblBody"></table></div>
+    <div id="tblLegend"></div>
+  </div>
+</section>
+
 </main>
 <nav>
   <button data-tab="match" class="on">Прогноз</button>
   <button data-tab="data">Данные</button>
   <button data-tab="journal">Журнал</button>
   <button data-tab="lab">Лаборатория</button>
+  <button data-tab="tables">Таблицы</button>
 </nav>
 
 <script>
@@ -708,6 +736,46 @@ nav button{font-size:15px;padding:0 4px}
     labGroups(cfgs).forEach(function(grp){prep.leagues.forEach(function(L){labPass(L,grp,res,prep.cutoff)})});
     return {prep:prep,cfgs:cfgs,res:res,pick:labPick(cfgs,res)};
   }
+
+  /* ----- турнирная таблица из результатов ----- */
+  function seasonKey(d){var y=+d.slice(0,4),mo=+d.slice(5,7);return mo>=7?y:y-1}
+  function shortName(t){
+    return t.replace(/^(AFC|FC)\s+/,'').replace(/\s+(AFC|FC|CF)$/,'');
+  }
+  function buildTable(seq,isCL,mode){
+    var dated=seq.filter(function(m){return m.date});
+    if(!dated.length)return null;
+    var cur=0;
+    dated.forEach(function(m){var k=seasonKey(m.date);if(k>cur)cur=k});
+    var ms=dated.filter(function(m){return seasonKey(m.date)===cur});
+    if(isCL){
+      var cut=[],c=0;
+      ms.forEach(function(m){if(c>=144)return;cut.push(m);if(m.gh!==null)c++});
+      ms=cut;
+    }
+    var T={},pend=0,played=0;
+    function row(t){return T[t]||(T[t]={t:t,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0,seq:[]})}
+    ms.forEach(function(m){
+      var H=row(m.h),A=row(m.a);
+      if(m.gh===null){pend++;H.seq.push('?');A.seq.push('?');return}
+      played++;
+      H.seq.push(m.gh>m.ga?'В':(m.gh===m.ga?'Н':'П'));
+      A.seq.push(m.ga>m.gh?'В':(m.ga===m.gh?'Н':'П'));
+      if(mode!=='away'){
+        H.p++;H.gf+=m.gh;H.ga+=m.ga;
+        if(m.gh>m.ga){H.w++;H.pts+=3}else if(m.gh===m.ga){H.d++;H.pts++}else H.l++;
+      }
+      if(mode!=='home'){
+        A.p++;A.gf+=m.ga;A.ga+=m.gh;
+        if(m.ga>m.gh){A.w++;A.pts+=3}else if(m.ga===m.gh){A.d++;A.pts++}else A.l++;
+      }
+    });
+    var rows=Object.keys(T).map(function(k){var r=T[k];r.gd=r.gf-r.ga;r.form=r.seq.slice(-5).join('');return r});
+    rows.sort(function(x,y){
+      return (y.pts-x.pts)||(y.gd-x.gd)||(y.gf-x.gf)||x.t.localeCompare(y.t,'ru');
+    });
+    return {season:cur,rows:rows,pending:pend,played:played};
+  }
   /*PURE-END*/
 
   /* ---------- состояние ---------- */
@@ -749,6 +817,7 @@ nav button{font-size:15px;padding:0 4px}
       window.scrollTo(0,0);
       if(b.dataset.tab==='journal')renderJournal();
       if(b.dataset.tab==='lab')renderLab();
+      if(b.dataset.tab==='tables')renderTables();
     });
   });
   document.querySelectorAll('#modeSeg button').forEach(function(b){
@@ -1701,6 +1770,67 @@ nav button{font-size:15px;padding:0 4px}
     }
   });
 
+
+  /* ---------- турнирные таблицы ---------- */
+  var tblMode='all';
+  var TBL_ORDER=['auto-PL','auto-PD','auto-BL1','auto-SA','auto-FL1','auto-CL'];
+  function tblSets(){
+    var sets=DS.list.filter(function(d){return d.auto});
+    sets.sort(function(a,b){
+      var x=TBL_ORDER.indexOf(a.id),y=TBL_ORDER.indexOf(b.id);
+      return (x<0?99:x)-(y<0?99:y);
+    });
+    return sets;
+  }
+  function fmHtml(f){
+    return f.split('').map(function(c){
+      return c==='В'?'<span class="ok">В</span>':(c==='П'?'<span class="bad">П</span>':(c==='?'?'<span style="color:var(--mute)">?</span>':c));
+    }).join('');
+  }
+  function renderTables(){
+    var sets=tblSets(),sel=$('#selTbl');
+    if(!sets.length){
+      sel.innerHTML='';
+      $('#tblBody').innerHTML='';
+      $('#tblLegend').innerHTML='';
+      $('#tblInfo').textContent='Данные лиг ещё не загружены. Откройте сайт заново через минуту или проверьте вкладку «Данные».';
+      return;
+    }
+    var saved=store.get('fp_tbl'),prev=sel.value||saved;
+    sel.innerHTML=sets.map(function(d){return '<option value="'+esc(d.id)+'">'+esc(d.name.replace(' (авто)',''))+'</option>'}).join('');
+    var cur=sets.filter(function(d){return d.id===prev})[0]||sets[0];
+    sel.value=cur.id;
+    var isCL=cur.id==='auto-CL',p=parseAll(cur.text||'');
+    var t=buildTable(p.all,isCL,tblMode);
+    if(!t||!t.rows.length){$('#tblBody').innerHTML='';$('#tblLegend').innerHTML='';$('#tblInfo').textContent='В этом турнире пока нет матчей с датами.';return}
+    var h='<tr><th>#</th><th style="text-align:left">Команда</th><th>И</th><th>В</th><th>Н</th><th>П</th><th>РМ</th><th>О</th></tr>';
+    t.rows.forEach(function(r,i){
+      var z='';
+      if(isCL&&tblMode==='all')z=i<8?' z1':(i<24?' z2':' z3');
+      h+='<tr><td class="'+z.trim()+'">'+(i+1)+'</td>'
+        +'<td class="tn">'+esc(shortName(r.t))+(r.form?'<span class="fm">'+fmHtml(r.form)+'</span>':'')+'</td>'
+        +'<td>'+r.p+'</td><td>'+r.w+'</td><td>'+r.d+'</td><td>'+r.l+'</td>'
+        +'<td>'+r.gf+':'+r.ga+'</td><td class="pt">'+r.pts+'</td></tr>';
+    });
+    $('#tblBody').innerHTML=h;
+    $('#tblInfo').textContent='Сезон '+t.season+'/'+String(t.season+1).slice(2)+(tblMode==='home'?', только домашние матчи':(tblMode==='away'?', только выездные матчи':''))
+      +'. Матчей учтено: '+t.played+(t.pending?'. Без счёта пока не учтено: '+t.pending:'')
+      +(autoUpdated?'. Данные на '+autoUpdated:'')+'. Обновляются раз в сутки, матчи, идущие прямо сейчас, не показываются.'
+      +(isCL?' В таблице показан этап лиги (первые 144 матча сезона).':'');
+    $('#tblLegend').innerHTML=(isCL&&tblMode==='all')
+      ?'<p class="lgd"><i style="background:var(--ok)"></i>1–8 в 1/8 финала<i style="background:var(--card-y)"></i>9–24 плей-офф<i style="background:var(--bad)"></i>25–36 выбывают</p>'
+      :'<p class="lgd">И — матчи, В/Н/П — победы, ничьи, поражения, РМ — разница мячей забитых и пропущенных, О — очки. Под названием: последние 5 матчей, справа последний. При равенстве очков порядок может отличаться от официального.</p>';
+    store.set('fp_tbl',cur.id);
+  }
+  $('#selTbl').addEventListener('change',renderTables);
+  $('#tblMode').addEventListener('click',function(ev){
+    var b=ev.target.closest('button');
+    if(!b)return;
+    tblMode=b.dataset.m;
+    document.querySelectorAll('#tblMode button').forEach(function(x){x.classList.toggle('on',x===b)});
+    renderTables();
+  });
+
   /* ---------- старт ---------- */
   loadState();
   loadUi();
@@ -1731,6 +1861,7 @@ nav button{font-size:15px;padding:0 4px}
         autoUpdated=isNaN(u)?'':u.toLocaleDateString('ru-RU',{day:'numeric',month:'long'});
       }
       if(changed||autoUpdated){persistDs();loadUi();train()}
+      if($('#tab-tables').classList.contains('on'))renderTables();
       setTimeout(maybeAutoTune,2500);
       setTimeout(maybeAutoCL,6000);
     }).catch(function(){});
