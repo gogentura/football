@@ -310,7 +310,7 @@ nav button{font-size:12.5px;padding:0 2px;letter-spacing:-.2px}
   function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 
   /*PURE-START*/
-  var S={half:0,form:0.5,ha:1,bank:1000,K:2,K2:8,K3:3,draw:1,eloW:0,unc:0,schema:3,clPrior:true,clCheck:null,ver:1,auto:true,hist:[],lastTune:null,aliases:{},nomerge:{}};
+  var S={half:0,form:0.5,ha:1,bank:1000,K:2,K2:8,K3:3,draw:1,eloW:0,unc:0,schema:4,clPrior:true,clCheck:null,ver:1,auto:true,hist:[],lastTune:null,aliases:{},nomerge:{}};
 
   /* ----- названия команд ----- */
   var STOP={'фк':1,'fc':1,'cf':1,'sc':1,'ac':1,'клуб':1};
@@ -578,26 +578,42 @@ nav button{font-size:12.5px;padding:0 2px;letter-spacing:-.2px}
     return {vh:(m.vA[h]||0)+(m.vD[a]||0)+v0,va:(m.vA[a]||0)+(m.vD[h]||0)+v0};
   }
   function predict(lh,la,phiH,phiA){
-    var rho=-0.08,N=9,P=[],tot=0,i,j;
-    var ph=pmfArr(lh,phiH,N),pa=pmfArr(la,phiA,N);
-    for(i=0;i<=N;i++){P[i]=[];for(j=0;j<=N;j++){
-      var t=1;
-      if(i===0&&j===0)t=1-lh*la*rho;
-      else if(i===0&&j===1)t=1+lh*rho;
-      else if(i===1&&j===0)t=1+la*rho;
-      else if(i===1&&j===1)t=1-rho;
-      P[i][j]=ph[i]*pa[j]*t;tot+=P[i][j];
-    }}
+    var rho=-0.08,N=9,i,j;
+    function mat(ph,pa){
+      var P=[],tot=0;
+      for(i=0;i<=N;i++){P[i]=[];for(j=0;j<=N;j++){
+        var t=1;
+        if(i===0&&j===0)t=1-lh*la*rho;
+        else if(i===0&&j===1)t=1+lh*rho;
+        else if(i===1&&j===0)t=1+la*rho;
+        else if(i===1&&j===1)t=1-rho;
+        P[i][j]=ph[i]*pa[j]*t;tot+=P[i][j];
+      }}
+      for(i=0;i<=N;i++)for(j=0;j<=N;j++)P[i][j]/=tot;
+      return P;
+    }
+    function reg(P){
+      var h=0,d=0,a=0;
+      for(i=0;i<=N;i++)for(j=0;j<=N;j++){if(i>j)h+=P[i][j];else if(i===j)d+=P[i][j];else a+=P[i][j]}
+      return [h,d,a];
+    }
+    var P=mat(pmfArr(lh,0,N),pmfArr(la,0,N));
+    var cH=Math.min(phiH||0,0.3),cA=Math.min(phiA||0,0.3);
+    if(cH>1e-6||cA>1e-6){
+      var a0=reg(P),a1=reg(mat(pmfArr(lh,cH,N),pmfArr(la,cA,N)));
+      var f=[a1[0]/a0[0],a1[1]/a0[1],a1[2]/a0[2]];
+      for(i=0;i<=N;i++)for(j=0;j<=N;j++)P[i][j]*=f[i>j?0:(i===j?1:2)];
+    }
     var p1=0,px=0,p2=0,o25=0,btts=0,list=[];
     for(i=0;i<=N;i++)for(j=0;j<=N;j++){
-      var p=P[i][j]/tot;
+      var p=P[i][j];
       if(i>j)p1+=p;else if(i===j)px+=p;else p2+=p;
       if(i+j>2)o25+=p;
       if(i>0&&j>0)btts+=p;
       list.push({s:i+':'+j,p:p});
     }
     list.sort(function(a,b){return b.p-a.p});
-    return {p1:p1,px:px,p2:p2,o25:o25,btts:btts,top:list.slice(0,5),all:list,lh:lh,la:la,phi:[phiH||0,phiA||0]};
+    return {p1:p1,px:px,p2:p2,o25:o25,btts:btts,top:list.slice(0,5),all:list,g:P,lh:lh,la:la,phi:[cH,cA]};
   }
   /* ----- рейтинги из национальных лиг для Лиги чемпионов ----- */
   function domesticFits(domLeagues,beforeDate){
@@ -656,9 +672,10 @@ nav button{font-size:12.5px;padding:0 2px;letter-spacing:-.2px}
     var q=boostDraw(r.p1,r.px,r.p2,S.draw);
     return Object.assign({},r,{p1:q[0],px:q[1],p2:q[2]});
   }
-  function newAcc(){return {n:[0,0],ll:[0,0],br:[0,0],hit:[0,0]}}
-  function addAcc(a,hf,p,o){
+  function newAcc(){return {n:[0,0],ll:[0,0],br:[0,0],hit:[0,0],sl:[0,0]}}
+  function addAcc(a,hf,p,o,sp){
     a.n[hf]++;
+    if(sp!==undefined)a.sl[hf]+=-Math.log(sp);
     a.ll[hf]+=-Math.log(Math.max(p[o],1e-6));
     var br=0,best=0,i;
     for(i=0;i<3;i++){br+=Math.pow(p[i]-(i===o?1:0),2);if(p[i]>p[best])best=i}
@@ -720,7 +737,8 @@ nav button{font-size:12.5px;padding:0 2px;letter-spacing:-.2px}
           }
           var q=boostDraw(r.p1,r.px,r.p2,c.draw);
           if(eq&&c.eloW>0){var w=c.eloW;q=[(1-w)*q[0]+w*eq.p1,(1-w)*q[1]+w*eq.px,(1-w)*q[2]+w*eq.p2]}
-          addAcc(res.cfg[c.id],hf,q,o);
+          var sp=(g.gh<=9&&g.ga<=9)?Math.max(r.g[g.gh][g.ga],1e-4):1e-4;
+          addAcc(res.cfg[c.id],hf,q,o,sp);
           if(c.champ){
             var al=res.league[L.name]||(res.league[L.name]=newAcc());
             addAcc(al,hf,q,o);
@@ -738,14 +756,14 @@ nav button{font-size:12.5px;padding:0 2px;letter-spacing:-.2px}
   function accSum(a){
     var n=a.n[0]+a.n[1];
     return {n:n,ll:n?(a.ll[0]+a.ll[1])/n:0,br:n?(a.br[0]+a.br[1])/n:0,hit:n?(a.hit[0]+a.hit[1])/n:0,
-      ll1:a.n[0]?a.ll[0]/a.n[0]:0,ll2:a.n[1]?a.ll[1]/a.n[1]:0,n1:a.n[0],n2:a.n[1]};
+      sl:n?(a.sl[0]+a.sl[1])/n:0,ll1:a.n[0]?a.ll[0]/a.n[0]:0,ll2:a.n[1]?a.ll[1]/a.n[1]:0,n1:a.n[0],n2:a.n[1]};
   }
   function labPick(cfgs,res){
     var ch=accSum(res.cfg[0]),rows=cfgs.map(function(c){return {c:c,s:accSum(res.cfg[c.id])}});
     var cand=rows.filter(function(r){return !r.c.champ}).sort(function(x,y){return x.s.ll-y.s.ll});
     cand.forEach(function(r){
       r.gain=ch.ll-r.s.ll;
-      r.pass=r.gain>=0.003&&r.s.ll1<ch.ll1&&r.s.ll2<ch.ll2;
+      r.pass=r.gain>=0.003&&r.s.ll1<ch.ll1&&r.s.ll2<ch.ll2&&r.s.sl<=ch.sl+0.01;
     });
     return {champ:ch,top:cand.slice(0,3),best:cand.filter(function(r){return r.pass})[0]||null};
   }
@@ -818,7 +836,7 @@ nav button{font-size:12.5px;padding:0 2px;letter-spacing:-.2px}
     var d=store.get('fp_datasets');
     if(d){try{var o=JSON.parse(d);if(o&&o.list&&o.list.length)DS=o}catch(e){}}
     var st=store.get('fp_settings');
-    if(st){try{var s=JSON.parse(st);Object.keys(s).forEach(function(k){S[k]=s[k]});if((s.schema||0)<3){S.lastTune=null;S.schema=3}}catch(e){}}
+    if(st){try{var s=JSON.parse(st);Object.keys(s).forEach(function(k){S[k]=s[k]});if((s.schema||0)<4){S.lastTune=null;S.schema=4}}catch(e){}}
     else if(store.get('fp_half'))S.half=parseInt(store.get('fp_half'),10)||0;
     S.aliases=S.aliases||{};S.nomerge=S.nomerge||{};S.hist=S.hist||[];
     if(S.ha===true)S.ha=1;else if(S.ha===false)S.ha=0;
@@ -1667,14 +1685,14 @@ nav button{font-size:12.5px;padding:0 2px;letter-spacing:-.2px}
   function renderTune(out){
     var el=$('#labTune');
     if(out.tooFew){el.innerHTML='<div class="warn">Пока слишком мало сыгранных матчей для подбора: после первых двух туров нужно хотя бы 40 (сейчас '+out.prep.n+'). Подождите несколько туров.</div>';return}
-    var P=out.pick,h='<p class="note">Проверено '+out.cfgs.length+' сочетаний на '+P.champ.n+' прогнозах. Текущие настройки: лог-потери '+P.champ.ll.toFixed(4)+'.</p>';
+    var P=out.pick,h='<p class="note">Проверено '+out.cfgs.length+' сочетаний на '+P.champ.n+' прогнозах. Текущие настройки: лог-потери исхода '+P.champ.ll.toFixed(4)+', лог-потери точного счёта '+P.champ.sl.toFixed(3)+'.</p>';
     P.top.forEach(function(r,i){
       h+='<div class="kv"><span>'+(i+1)+'. '+cfgText(r.c)+'</span><b>'+r.s.ll.toFixed(4)+(r.pass?' ✓':'')+'</b></div>';
     });
     if(P.best){
-      h+='<div class="rec"><b>Рекомендация:</b> '+cfgText(P.best.c)+'. Выигрыш '+P.best.gain.toFixed(3)+' по лог-потерям, лучше текущих в обеих половинах истории.<button class="primary" id="btnApplyBest">Применить</button></div>';
+      h+='<div class="rec"><b>Рекомендация:</b> '+cfgText(P.best.c)+'. Выигрыш '+P.best.gain.toFixed(3)+' по лог-потерям исхода, лучше текущих в обеих половинах истории, точный счёт не ухудшился.<button class="primary" id="btnApplyBest">Применить</button></div>';
     } else {
-      h+='<div class="warn">Сочетания, которое надёжно лучше текущего (запас 0.003 и улучшение в обеих половинах истории), пока нет. Оставляем текущие настройки.</div>';
+      h+='<div class="warn">Сочетания, которое надёжно лучше текущего (запас 0.003, улучшение в обеих половинах истории и без ухудшения точного счёта), пока нет. Оставляем текущие настройки.</div>';
     }
     el.innerHTML=h;
   }
