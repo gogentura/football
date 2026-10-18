@@ -1446,7 +1446,15 @@ nav button{font-size:12.5px;padding:0 2px;letter-spacing:-.2px}
       if(e.bet)l+='<p class="je-p">Ставка: '+pk[e.bet.pick]+' @ '+e.bet.odds.toFixed(2)+', сумма '+money(e.bet.stake)+'</p>';
       if(e.res){
         var pr=[e.p1,e.px,e.p2],ok=pr.indexOf(Math.max.apply(null,pr))===outcome(e.res);
-        l+='<div class="je-s '+(ok?'ok':'bad')+'">'+e.res.gh+':'+e.res.ga+(ok?' ✓':' ✗')+'</div>';
+        if(e.id===editId){
+          l+='<div class="je-r"><input type="number" inputmode="numeric" min="0" max="30" value="'+e.res.gh+'" aria-label="Голы хозяев">'
+            +'<input type="number" inputmode="numeric" min="0" max="30" value="'+e.res.ga+'" aria-label="Голы гостей">'
+            +'<button data-upd="'+e.id+'">Сохранить</button></div>'
+            +'<button class="ghost small" data-cancel="'+e.id+'" style="margin-top:8px">Отмена</button>';
+        } else {
+          l+='<div class="je-s '+(ok?'ok':'bad')+'">'+e.res.gh+':'+e.res.ga+(ok?' ✓':' ✗')+'</div>'
+            +'<button class="ghost small" data-edit="'+e.id+'" style="margin-top:6px">Изменить счёт</button>';
+        }
         var real=e.res.gh+':'+e.res.ga,rk=-1,rp=0;
         pe.all.forEach(function(t,ix){if(t.s===real){rk=ix+1;rp=t.p}});
         l+='<p class="je-p">'+(rk>0?'Реальный счёт '+real+' модель ставила на '+rk+'-е место ('+(rp*100).toFixed(1)+'%)'+(rk<=5?', он входил в пятёрку.':'.'):'Реальный счёт '+real+' модель считала почти невозможным (меньше 0.1%).')+'</p>';
@@ -1483,6 +1491,27 @@ nav button{font-size:12.5px;padding:0 2px;letter-spacing:-.2px}
     }
   });
 
+  var editId=null;
+  function escRe(x){return x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}
+  /* исправление ошибочно записанного счёта: меняем запись журнала и строку, которую приложение добавило в набор данных */
+  function updateResult(e,gh,ga){
+    var old=e.res;
+    e.res={gh:gh,ga:ga};
+    if(!e.added||!old||(old.gh===gh&&old.ga===ga))return false;
+    var ds=DS.list.filter(function(d){return d.id===e.dsId})[0]||(e.dsId?null:activeDs());
+    if(!ds)return false;
+    var re=new RegExp('^(\\s*\\d{1,2}\\.\\d{1,2}\\.\\d{4}\\s+)?'+escRe(e.h)+'\\s+'+old.gh+':'+old.ga+'\\s+'+escRe(e.a)+'\\s*$');
+    var lines=(ds.text||'').split(/\r?\n/),hit=false;
+    for(var i=lines.length-1;i>=0;i--){
+      var m=lines[i].match(re);
+      if(m){lines[i]=(m[1]||'')+e.h+' '+gh+':'+ga+' '+e.a;hit=true;break}
+    }
+    if(!hit)return false;
+    ds.text=lines.join('\n');
+    persistDs();
+    if(ds.id===DS.active){TXT.value=ds.text;train()}
+    return true;
+  }
   function todayStr(){var d=new Date();return p2(d.getDate())+'.'+p2(d.getMonth()+1)+'.'+d.getFullYear()}
   function appendResult(e,gh,ga){
     if(e.mode!=='league')return false;
@@ -1502,6 +1531,23 @@ nav button{font-size:12.5px;padding:0 2px;letter-spacing:-.2px}
     if(t.dataset&&t.dataset.del){
       id=+t.dataset.del;
       saveJ(loadJ().filter(function(e){return e.id!==id}));
+      renderJournal();
+    } else if(t.dataset&&t.dataset.edit){
+      editId=+t.dataset.edit;
+      renderJournal();
+    } else if(t.dataset&&t.dataset.cancel){
+      editId=null;
+      renderJournal();
+    } else if(t.dataset&&t.dataset.upd){
+      id=+t.dataset.upd;
+      var ins2=t.parentNode.querySelectorAll('input');
+      var gh2=parseInt(ins2[0].value,10),ga2=parseInt(ins2[1].value,10);
+      if(isNaN(gh2)||isNaN(ga2)||gh2<0||ga2<0){ins2[0].focus();return}
+      var j2=loadJ(),e2=j2.filter(function(x){return x.id===id})[0];
+      if(!e2)return;
+      updateResult(e2,gh2,ga2);
+      saveJ(j2);
+      editId=null;
       renderJournal();
     } else if(t.dataset&&t.dataset.res){
       id=+t.dataset.res;
